@@ -1,0 +1,324 @@
+@using BTCPayServer.Abstractions.Extensions
+@using BTCPayServer.Plugins.BTCMap.Data
+@using BTCPayServer.Plugins.BTCMap.Models
+@using BTCPayServer.Plugins.BTCMap.Views
+@model BtcMapListingViewModel
+
+@{
+    ViewData.SetActivePage(BtcMapNavPages.Store, "BTC Map");
+    var storeId = Context.GetRouteValue("storeId")?.ToString();
+    var osmBaseUrl = Model.IsMainnet
+        ? "https://www.openstreetmap.org"
+        : "https://master.apis.dev.openstreetmap.org";
+    var apiLabel = Model.IsMainnet ? "Production" : "Development";
+    var registerUrl = Model.IsMainnet
+        ? "https://www.openstreetmap.org/oauth2/applications/new"
+        : "https://master.apis.dev.openstreetmap.org/oauth2/applications/new";
+}
+
+<div class="row">
+    <div class="col-xxl-constrain col-xl-8">
+        @if (!string.IsNullOrEmpty(Model.StatusMessage))
+        {
+            var isError = Model.StatusMessage.StartsWith("Error", StringComparison.OrdinalIgnoreCase);
+            <div class="alert @(isError ? "alert-danger" : "alert-success") alert-dismissible" role="alert">
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                @Model.StatusMessage
+            </div>
+        }
+
+        <h3 class="mb-3">BTC Map</h3>
+        <p class="text-secondary">
+            List your business on <a href="https://btcmap.org" target="_blank" rel="noopener noreferrer">BTC Map</a> so customers can find you.
+            BTC Map reads data from OpenStreetMap — this plugin will create or update your business's OSM entry with Bitcoin acceptance tags.
+        </p>
+
+        @* ── OSM Connection Status / Admin Config ── *@
+        @if (Model.OsmConnected)
+        {
+            <div class="d-flex align-items-center gap-2 mb-4">
+                <span class="badge bg-success">OSM Connected</span>
+                <span>as <strong>@Model.OsmDisplayName</strong></span>
+                <span class="text-muted">(@apiLabel API)</span>
+                @if (Model.IsAdmin)
+                {
+                    <form method="post" asp-controller="UIBtcMapServer" asp-action="DisconnectOsm" class="ms-2">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="returnStoreId" value="@storeId" />
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Disconnect</button>
+                    </form>
+                }
+            </div>
+        }
+        else if (Model.IsAdmin)
+        {
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title">OSM Setup</h5>
+                    <p class="text-muted mb-3">
+                        Using <strong>OSM @apiLabel API</strong>@(Model.IsMainnet ? "" : " (non-mainnet network)")
+                    </p>
+
+                    <form method="post" asp-controller="UIBtcMapServer" asp-action="SaveSettings">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="returnStoreId" value="@storeId" />
+                        <div class="form-group mb-3">
+                            <label class="form-label">OSM OAuth Client ID</label>
+                            <input name="osmClientId" class="form-control" value="@Model.OsmClientId" placeholder="Your OAuth 2.0 Client ID" />
+                            <div class="form-text">
+                                Register at <a href="@registerUrl" target="_blank" rel="noopener noreferrer">@(Model.IsMainnet ? "openstreetmap.org" : "OSM dev server")</a>.
+                                Redirect URI: <code>@(Url.Action("OAuthCallback", "UIBtcMapServer", null, Context.Request.Scheme))</code>
+                            </div>
+                        </div>
+                        <div class="form-group mb-3">
+                            <label class="form-label">OSM OAuth Client Secret</label>
+                            @if (!string.IsNullOrEmpty(Model.OsmClientSecret))
+                            {
+                                <div class="input-group">
+                                    <input name="osmClientSecret" class="form-control" type="password" placeholder="Leave blank to keep current" />
+                                    <span class="input-group-text text-success">Saved</span>
+                                </div>
+                            }
+                            else
+                            {
+                                <input name="osmClientSecret" class="form-control" type="password" />
+                            }
+                        </div>
+
+                        <div class="alert alert-secondary mb-3">
+                            <strong>Required OAuth permissions:</strong>
+                            <ul class="mb-0 mt-1">
+                                <li><strong>Modify the map</strong> — write Bitcoin acceptance tags</li>
+                                <li><strong>Read user preferences</strong> — display connected account name</li>
+                            </ul>
+                            <small class="text-muted">If you update permissions, disconnect and reconnect for changes to take effect.</small>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary me-2">Save</button>
+                    </form>
+
+                    @if (!string.IsNullOrEmpty(Model.OsmClientId) && !string.IsNullOrEmpty(Model.OsmClientSecret))
+                    {
+                        <a asp-controller="UIBtcMapServer" asp-action="ConnectOsm"
+                           asp-route-returnStoreId="@storeId" class="btn btn-secondary mt-2">Connect OSM Account</a>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="alert alert-warning mb-4">
+                OpenStreetMap is not connected. A server administrator must configure OSM credentials before merchants can be listed.
+            </div>
+        }
+
+        @* ── Listing Section (only when OSM connected) ── *@
+        @if (Model.OsmConnected)
+        {
+            if (Model.ExistingListing != null && Model.ExistingListing.Status == ListingStatus.Active)
+            {
+                <div class="alert alert-success">
+                    Your business is listed on BTC Map.
+                </div>
+
+                <dl class="row mb-4">
+                    <dt class="col-sm-3">Business Name</dt><dd class="col-sm-9">@Model.ExistingListing.BusinessName</dd>
+                    <dt class="col-sm-3">Category</dt><dd class="col-sm-9">@Model.ExistingListing.Category</dd>
+                    <dt class="col-sm-3">Coordinates</dt><dd class="col-sm-9">@Model.ExistingListing.Latitude, @Model.ExistingListing.Longitude</dd>
+                    <dt class="col-sm-3">OSM Element</dt><dd class="col-sm-9"><a href="@osmBaseUrl/@Model.ExistingListing.OsmElementType/@Model.ExistingListing.OsmElementId" target="_blank" rel="noopener noreferrer">@Model.ExistingListing.OsmElementType/@Model.ExistingListing.OsmElementId</a></dd>
+                    <dt class="col-sm-3">Last Verified</dt><dd class="col-sm-9">@Model.ExistingListing.LastVerifiedAt.ToString("yyyy-MM-dd")</dd>
+                    <dt class="col-sm-3">On-chain</dt><dd class="col-sm-9">@(Model.ExistingListing.AcceptsOnchain ? "Yes" : "No")</dd>
+                    <dt class="col-sm-3">Lightning</dt><dd class="col-sm-9">@(Model.ExistingListing.AcceptsLightning ? "Yes" : "No")</dd>
+                </dl>
+
+                <h4 class="mb-3">Update Listing</h4>
+                <form method="post" asp-action="UpdateListing" asp-route-storeId="@storeId">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" asp-for="Settings.BusinessName" value="@Model.Settings.BusinessName" />
+                    <input type="hidden" asp-for="Settings.Category" value="@Model.Settings.Category" />
+                    <input type="hidden" asp-for="Settings.Latitude" value="@Model.Settings.Latitude" />
+                    <input type="hidden" asp-for="Settings.Longitude" value="@Model.Settings.Longitude" />
+                    <input type="hidden" asp-for="Settings.Street" value="@Model.Settings.Street" />
+                    <input type="hidden" asp-for="Settings.City" value="@Model.Settings.City" />
+                    <input type="hidden" asp-for="Settings.PostCode" value="@Model.Settings.PostCode" />
+                    <input type="hidden" asp-for="Settings.Country" value="@Model.Settings.Country" />
+                    <div class="form-check mb-2">
+                        <input asp-for="Settings.AcceptsOnchain" class="form-check-input" type="checkbox" />
+                        <label asp-for="Settings.AcceptsOnchain" class="form-check-label">Accepts on-chain Bitcoin</label>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input asp-for="Settings.AcceptsLightning" class="form-check-input" type="checkbox" />
+                        <label asp-for="Settings.AcceptsLightning" class="form-check-label">Accepts Lightning</label>
+                    </div>
+                    <button type="submit" class="btn btn-primary me-2">Update Tags</button>
+                </form>
+
+                <hr class="my-4" />
+                <form method="post" asp-action="Unlist" asp-route-storeId="@storeId">
+                    @Html.AntiForgeryToken()
+                    <button type="submit" class="btn btn-outline-danger"
+                            onclick="return confirm('Remove your business from BTC Map? This will remove Bitcoin acceptance tags from OpenStreetMap.');">
+                        Remove from BTC Map
+                    </button>
+                </form>
+            }
+            else
+            {
+                <form method="post" asp-action="Search" asp-route-storeId="@storeId">
+                    @Html.AntiForgeryToken()
+                    <div class="form-group mb-3">
+                        <label asp-for="Settings.BusinessName" class="form-label">Business Name</label>
+                        <input asp-for="Settings.BusinessName" class="form-control" required />
+                        <span asp-validation-for="Settings.BusinessName" class="text-danger"></span>
+                    </div>
+
+                    <div class="form-group mb-3">
+                        <label asp-for="Settings.Category" class="form-label">Category</label>
+                        <select asp-for="Settings.Category" class="form-select" required>
+                            <option value="">Select a category...</option>
+                            <optgroup label="Food &amp; Drink">
+                                <option value="cafe">Cafe</option>
+                                <option value="restaurant">Restaurant</option>
+                                <option value="bar">Bar</option>
+                                <option value="pub">Pub</option>
+                                <option value="fast_food">Fast Food</option>
+                            </optgroup>
+                            <optgroup label="Shopping">
+                                <option value="supermarket">Supermarket</option>
+                                <option value="convenience">Convenience Store</option>
+                                <option value="clothes">Clothing Store</option>
+                                <option value="electronics">Electronics Store</option>
+                                <option value="jewelry">Jewelry Store</option>
+                                <option value="books">Bookstore</option>
+                                <option value="gift">Gift Shop</option>
+                                <option value="general">General Store</option>
+                            </optgroup>
+                            <optgroup label="Services">
+                                <option value="hotel">Hotel / Accommodation</option>
+                                <option value="coworking">Coworking Space</option>
+                                <option value="atm">Bitcoin ATM</option>
+                            </optgroup>
+                            <optgroup label="Other">
+                                <option value="marketplace">Marketplace</option>
+                                <option value="shop">Other Shop</option>
+                            </optgroup>
+                        </select>
+                        <span asp-validation-for="Settings.Category" class="text-danger"></span>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label asp-for="Settings.Street" class="form-label">Street Address</label>
+                            <input asp-for="Settings.Street" class="form-control" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="Settings.City" class="form-label">City</label>
+                            <input asp-for="Settings.City" class="form-control" />
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label asp-for="Settings.PostCode" class="form-label">Post Code</label>
+                            <input asp-for="Settings.PostCode" class="form-control" />
+                        </div>
+                        <div class="col-md-4">
+                            <label asp-for="Settings.Country" class="form-label">Country Code</label>
+                            <input asp-for="Settings.Country" class="form-control" placeholder="e.g., US, DE, JP" maxlength="2" />
+                        </div>
+                        <div class="col-md-4 d-flex align-items-end">
+                            <button type="button" class="btn btn-outline-secondary w-100" id="geocodeBtn">
+                                Lookup Coordinates
+                            </button>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label asp-for="Settings.Latitude" class="form-label">Latitude</label>
+                            <input asp-for="Settings.Latitude" class="form-control" step="any" required />
+                            <span asp-validation-for="Settings.Latitude" class="text-danger"></span>
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="Settings.Longitude" class="form-label">Longitude</label>
+                            <input asp-for="Settings.Longitude" class="form-control" step="any" required />
+                            <span asp-validation-for="Settings.Longitude" class="text-danger"></span>
+                        </div>
+                    </div>
+
+                    <div class="form-check mb-2">
+                        <input asp-for="Settings.AcceptsOnchain" class="form-check-input" type="checkbox" checked />
+                        <label asp-for="Settings.AcceptsOnchain" class="form-check-label">Accepts on-chain Bitcoin</label>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input asp-for="Settings.AcceptsLightning" class="form-check-input" type="checkbox" checked />
+                        <label asp-for="Settings.AcceptsLightning" class="form-check-label">Accepts Lightning</label>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Search &amp; List on BTC Map</button>
+                </form>
+
+                @if (!Model.IsMainnet)
+                {
+                    <form method="post" asp-action="CreateListing" asp-route-storeId="@storeId" class="mt-2">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="Settings.BusinessName" id="direct_BusinessName" />
+                        <input type="hidden" name="Settings.Category" id="direct_Category" />
+                        <input type="hidden" name="Settings.Latitude" id="direct_Latitude" />
+                        <input type="hidden" name="Settings.Longitude" id="direct_Longitude" />
+                        <input type="hidden" name="Settings.Street" id="direct_Street" />
+                        <input type="hidden" name="Settings.City" id="direct_City" />
+                        <input type="hidden" name="Settings.PostCode" id="direct_PostCode" />
+                        <input type="hidden" name="Settings.Country" id="direct_Country" />
+                        <input type="hidden" name="Settings.AcceptsOnchain" id="direct_AcceptsOnchain" />
+                        <input type="hidden" name="Settings.AcceptsLightning" id="direct_AcceptsLightning" />
+                        <button type="submit" class="btn btn-outline-secondary" onclick="copyFormValues()">Create Without Searching</button>
+                    </form>
+                }
+            }
+        }
+    </div>
+</div>
+
+<script>
+    document.getElementById('geocodeBtn')?.addEventListener('click', async function() {
+        const form = this.closest('form');
+        const data = new FormData(form);
+        const btn = this;
+        btn.disabled = true;
+        btn.textContent = 'Looking up...';
+
+        try {
+            const response = await fetch('@Url.Action("Geocode", "UIBtcMapStore", new { storeId })', {
+                method: 'POST',
+                body: data
+            });
+            const result = await response.json();
+            if (result.success) {
+                document.getElementById('Settings_Latitude').value = result.lat;
+                document.getElementById('Settings_Longitude').value = result.lon;
+            } else {
+                alert(result.message || 'Address not found.');
+            }
+        } catch (e) {
+            alert('Geocoding failed. Please enter coordinates manually.');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Lookup Coordinates';
+        }
+    });
+
+    @if (!Model.IsMainnet)
+    {
+        <text>
+        function copyFormValues() {
+            const fields = ['BusinessName', 'Category', 'Latitude', 'Longitude', 'Street', 'City', 'PostCode', 'Country'];
+            fields.forEach(f => {
+                const src = document.getElementById('Settings_' + f);
+                const dst = document.getElementById('direct_' + f);
+                if (src && dst) dst.value = src.value;
+            });
+            document.getElementById('direct_AcceptsOnchain').value = document.getElementById('Settings_AcceptsOnchain')?.checked ?? false;
+            document.getElementById('direct_AcceptsLightning').value = document.getElementById('Settings_AcceptsLightning')?.checked ?? false;
+        }
+        </text>
+    }
+</script>

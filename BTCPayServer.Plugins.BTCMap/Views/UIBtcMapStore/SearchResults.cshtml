@@ -1,0 +1,93 @@
+@using BTCPayServer.Abstractions.Extensions
+@using BTCPayServer.Plugins.BTCMap.Models
+@using BTCPayServer.Plugins.BTCMap.Views
+@model BtcMapListingViewModel
+
+@{
+    ViewData.SetActivePage(BtcMapNavPages.Store, "BTC Map — Search Results");
+    var storeId = Context.GetRouteValue("storeId")?.ToString();
+}
+
+<div class="row">
+    <div class="col-xxl-constrain col-xl-8">
+        <h3 class="mb-3">BTC Map — Search Results</h3>
+
+        @if (Model.SearchResults != null && Model.SearchResults.Count > 0)
+        {
+            <p>We found existing locations near your coordinates. If your business is already on OpenStreetMap, select it below to add Bitcoin acceptance tags.</p>
+
+            <div class="list-group mb-4">
+                @foreach (var element in Model.SearchResults)
+                {
+                    var elementName = element.Tags.ContainsKey("name") ? element.Tags["name"] : $"{element.Type}/{element.Id}";
+                    var elementType = element.Tags.ContainsKey("amenity") ? element.Tags["amenity"] :
+                                     element.Tags.ContainsKey("shop") ? element.Tags["shop"] : element.Type;
+                    var hasBtc = element.Tags.ContainsKey("currency:XBT");
+
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h5 class="mb-1">@elementName</h5>
+                                <p class="mb-1 text-muted">
+                                    @elementType — @element.Type/@element.Id
+                                    @if (element.Lat.HasValue && element.Lon.HasValue)
+                                    {
+                                        <span>(@element.Lat.Value.ToString("F5"), @element.Lon.Value.ToString("F5"))</span>
+                                    }
+                                </p>
+                                @if (hasBtc)
+                                {
+                                    <span class="badge bg-warning text-dark">Already has Bitcoin tags</span>
+                                }
+                            </div>
+                            @if (!hasBtc)
+                            {
+                                <form method="post" asp-action="LinkExisting" asp-route-storeId="@storeId">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="BusinessName" value="@Model.Settings.BusinessName" />
+                                    <input type="hidden" name="Category" value="@Model.Settings.Category" />
+                                    <input type="hidden" name="Latitude" value="@Model.Settings.Latitude" />
+                                    <input type="hidden" name="Longitude" value="@Model.Settings.Longitude" />
+                                    <input type="hidden" name="Street" value="@Model.Settings.Street" />
+                                    <input type="hidden" name="City" value="@Model.Settings.City" />
+                                    <input type="hidden" name="PostCode" value="@Model.Settings.PostCode" />
+                                    <input type="hidden" name="Country" value="@Model.Settings.Country" />
+                                    <input type="hidden" name="AcceptsOnchain" value="@Model.Settings.AcceptsOnchain" />
+                                    <input type="hidden" name="AcceptsLightning" value="@Model.Settings.AcceptsLightning" />
+                                    <input type="hidden" name="osmType" value="@element.Type" />
+                                    <input type="hidden" name="osmId" value="@element.Id" />
+                                    <button type="submit" class="btn btn-sm btn-primary">Link to this</button>
+                                </form>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <p>No existing locations found near your coordinates.</p>
+        }
+
+        <h4 class="mb-3">Create a New Location</h4>
+        <p class="text-secondary">If none of the above match your business, create a new entry on OpenStreetMap.</p>
+
+        <form method="post" asp-action="CreateListing" asp-route-storeId="@storeId">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="BusinessName" value="@Model.Settings.BusinessName" />
+            <input type="hidden" name="Category" value="@Model.Settings.Category" />
+            <input type="hidden" name="Latitude" value="@Model.Settings.Latitude" />
+            <input type="hidden" name="Longitude" value="@Model.Settings.Longitude" />
+            <input type="hidden" name="Street" value="@Model.Settings.Street" />
+            <input type="hidden" name="City" value="@Model.Settings.City" />
+            <input type="hidden" name="PostCode" value="@Model.Settings.PostCode" />
+            <input type="hidden" name="Country" value="@Model.Settings.Country" />
+            <input type="hidden" name="AcceptsOnchain" value="@Model.Settings.AcceptsOnchain" />
+            <input type="hidden" name="AcceptsLightning" value="@Model.Settings.AcceptsLightning" />
+            <button type="submit" class="btn btn-success">Create New OSM Node</button>
+        </form>
+
+        <hr class="my-4" />
+        <a asp-action="Index" asp-route-storeId="@storeId" class="btn btn-outline-secondary">Back</a>
+    </div>
+</div>

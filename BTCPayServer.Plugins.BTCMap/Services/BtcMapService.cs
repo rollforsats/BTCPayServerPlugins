@@ -1,0 +1,297 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using BTCPayServer.Plugins.BTCMap.Data;
+using BTCPayServer.Plugins.BTCMap.Models;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+
+namespace BTCPayServer.Plugins.BTCMap.Services;
+
+public class BtcMapService
+{
+    private readonly BtcMapDbContextFactory _dbContextFactory;
+    private readonly OsmApiClient _osmApiClient;
+    private readonly OverpassApiClient _overpassApiClient;
+    private readonly OsmAuthService _osmAuthService;
+    private readonly ILogger<BtcMapService> _logger;
+
+    public BtcMapService(
+        BtcMapDbContextFactory dbContextFactory,
+        OsmApiClient osmApiClient,
+        OverpassApiClient overpassApiClient,
+        OsmAuthService osmAuthService,
+        ILogger<BtcMapService> logger)
+    {
+        _dbContextFactory = dbContextFactory;
+        _osmApiClient = osmApiClient;
+        _overpassApiClient = overpassApiClient;
+        _osmAuthService = osmAuthService;
+        _logger = logger;
+    }
+
+    public async Task<BtcMapListing> GetListingForStore(string storeId)
+    {
+        await using var ctx = _dbContextFactory.CreateContext();
+        return await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId);
+    }
+
+    public async Task<List<OverpassElement>> SearchNearby(double lat, double lon, string name)
+    {
+        return await _overpassApiClient.SearchNearby(lat, lon, 50, name);
+    }
+
+    public async Task<List<OverpassElement>> CheckDuplicates(double lat, double lon)
+    {
+        return await _overpassApiClient.CheckExistingBitcoinTags(lat, lon);
+    }
+
+    public async Task<BtcMapListing> CreateNewListing(string storeId, BtcMapStoreSettings settings)
+    {
+        var osmSettings = await _osmAuthService.GetSettings();
+        var tags = BuildAllTags(settings, isNewNode: true);
+
+        var comment = $"Add Bitcoin payment tags for {settings.BusinessName} #btcmap";
+        var changesetId = await _osmApiClient.CreateChangeset(osmSettings, comment);
+        try
+        {
+            var nodeId = await _osmApiClient.CreateNode(osmSettings, changesetId,
+                settings.Latitude, settings.Longitude, tags);
+
+            var listing = new BtcMapListing
+            {
+                StoreId = storeId,
+                OsmElementType = "node",
+                OsmElementId = nodeId,
+                OsmElementVersion = 1,
+                BusinessName = settings.BusinessName,
+                Category = settings.Category,
+                Latitude = settings.Latitude,
+                Longitude = settings.Longitude,
+                Street = settings.Street,
+                City = settings.City,
+                PostCode = settings.PostCode,
+                Country = settings.Country,
+                AcceptsOnchain = settings.AcceptsOnchain,
+                AcceptsLightning = settings.AcceptsLightning,
+                CreatedAt = DateTimeOffset.UtcNow,
+                LastVerifiedAt = DateTimeOffset.UtcNow,
+                Status = ListingStatus.Active
+            };
+
+            await using var ctx = _dbContextFactory.CreateContext();
+            var existing = await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId);
+            if (existing != null)
+                ctx.Listings.Remove(existing);
+            ctx.Listings.Add(listing);
+            await ctx.SaveChangesAsync();
+
+            return listing;
+        }
+        finally
+        {
+            await _osmApiClient.CloseChangeset(osmSettings, changesetId);
+        }
+    }
+
+    public async Task<BtcMapListing> LinkToExistingElement(string storeId, BtcMapStoreSettings settings,
+        string osmType, long osmId)
+    {
+        var osmSettings = await _osmAuthService.GetSettings();
+        var element = await _osmApiClient.GetElement(osmSettings, osmType, osmId);
+
+        var bitcoinTags = OsmApiClient.BuildBitcoinTags(settings.AcceptsOnchain, settings.AcceptsLightning);
+        foreach (var tag in bitcoinTags)
+            element.Tags[tag.Key] = tag.Value;
+
+        var comment = $"Add Bitcoin payment tags for {settings.BusinessName} #btcmap";
+        var changesetId = await _osmApiClient.CreateChangeset(osmSettings, comment);
+        try
+        {
+            var newVersion = await _osmApiClient.UpdateElement(osmSettings, changesetId, element);
+
+            var listing = new BtcMapListing
+            {
+                StoreId = storeId,
+                OsmElementType = osmType,
+                OsmElementId = osmId,
+                OsmElementVersion = newVersion,
+                BusinessName = settings.BusinessName,
+                Category = settings.Category,
+                Latitude = settings.Latitude,
+                Longitude = settings.Longitude,
+                Street = settings.Street,
+                City = settings.City,
+                PostCode = settings.PostCode,
+                Country = settings.Country,
+                AcceptsOnchain = settings.AcceptsOnchain,
+                AcceptsLightning = settings.AcceptsLightning,
+                CreatedAt = DateTimeOffset.UtcNow,
+                LastVerifiedAt = DateTimeOffset.UtcNow,
+                Status = ListingStatus.Active
+            };
+
+            await using var ctx = _dbContextFactory.CreateContext();
+            var existing = await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId);
+            if (existing != null)
+                ctx.Listings.Remove(existing);
+            ctx.Listings.Add(listing);
+            await ctx.SaveChangesAsync();
+
+            return listing;
+        }
+        finally
+        {
+            await _osmApiClient.CloseChangeset(osmSettings, changesetId);
+        }
+    }
+
+    public async Task UpdateListing(BtcMapListing listing, BtcMapStoreSettings settings)
+    {
+        var osmSettings = await _osmAuthService.GetSettings();
+        const int maxRetries = 3;
+
+        for (var attempt = 0; attempt < maxRetries; attempt++)
+        {
+            var element = await _osmApiClient.GetElement(osmSettings,
+                listing.OsmElementType, listing.OsmElementId);
+
+            var bitcoinTags = OsmApiClient.BuildBitcoinTags(settings.AcceptsOnchain, settings.AcceptsLightning);
+            foreach (var tag in bitcoinTags)
+                element.Tags[tag.Key] = tag.Value;
+
+            // Remove payment methods that are no longer enabled
+            if (!settings.AcceptsOnchain)
+                element.Tags.Remove("payment:onchain");
+            if (!settings.AcceptsLightning)
+                element.Tags.Remove("payment:lightning");
+
+            var comment = $"Update Bitcoin payment tags for {settings.BusinessName} #btcmap";
+            var changesetId = await _osmApiClient.CreateChangeset(osmSettings, comment);
+            try
+            {
+                var newVersion = await _osmApiClient.UpdateElement(osmSettings, changesetId, element);
+
+                await using var ctx = _dbContextFactory.CreateContext();
+                var dbListing = await ctx.Listings.FirstAsync(l => l.Id == listing.Id);
+                dbListing.OsmElementVersion = newVersion;
+                dbListing.BusinessName = settings.BusinessName;
+                dbListing.Category = settings.Category;
+                dbListing.AcceptsOnchain = settings.AcceptsOnchain;
+                dbListing.AcceptsLightning = settings.AcceptsLightning;
+                dbListing.LastVerifiedAt = DateTimeOffset.UtcNow;
+                await ctx.SaveChangesAsync();
+                return;
+            }
+            catch (OsmVersionConflictException) when (attempt < maxRetries - 1)
+            {
+                _logger.LogWarning("Version conflict on attempt {Attempt}, retrying", attempt + 1);
+            }
+            finally
+            {
+                await _osmApiClient.CloseChangeset(osmSettings, changesetId);
+            }
+        }
+    }
+
+    public async Task UnlistStore(string storeId)
+    {
+        var listing = await GetListingForStore(storeId);
+        if (listing == null || listing.Status == ListingStatus.Unlisted)
+            return;
+
+        var osmSettings = await _osmAuthService.GetSettings();
+        var element = await _osmApiClient.GetElement(osmSettings,
+            listing.OsmElementType, listing.OsmElementId);
+
+        // Remove only Bitcoin-related tags
+        foreach (var key in OsmApiClient.BitcoinTagKeys)
+            element.Tags.Remove(key);
+
+        var comment = $"Remove Bitcoin payment tags for {listing.BusinessName} #btcmap";
+        var changesetId = await _osmApiClient.CreateChangeset(osmSettings, comment);
+        try
+        {
+            await _osmApiClient.UpdateElement(osmSettings, changesetId, element);
+        }
+        finally
+        {
+            await _osmApiClient.CloseChangeset(osmSettings, changesetId);
+        }
+
+        await using var ctx = _dbContextFactory.CreateContext();
+        var dbListing = await ctx.Listings.FirstAsync(l => l.Id == listing.Id);
+        dbListing.Status = ListingStatus.Unlisted;
+        await ctx.SaveChangesAsync();
+    }
+
+    public async Task ReverifyListing(BtcMapListing listing)
+    {
+        var osmSettings = await _osmAuthService.GetSettings();
+
+        var element = await _osmApiClient.GetElement(osmSettings,
+            listing.OsmElementType, listing.OsmElementId);
+
+        element.Tags["check_date:currency:XBT"] = DateTime.UtcNow.ToString("yyyy-MM-dd");
+
+        var comment = $"Re-verify Bitcoin acceptance for {listing.BusinessName} #btcmap";
+        var changesetId = await _osmApiClient.CreateChangeset(osmSettings, comment);
+        try
+        {
+            var newVersion = await _osmApiClient.UpdateElement(osmSettings, changesetId, element);
+
+            await using var ctx = _dbContextFactory.CreateContext();
+            var dbListing = await ctx.Listings.FirstAsync(l => l.Id == listing.Id);
+            dbListing.OsmElementVersion = newVersion;
+            dbListing.LastVerifiedAt = DateTimeOffset.UtcNow;
+            await ctx.SaveChangesAsync();
+        }
+        finally
+        {
+            await _osmApiClient.CloseChangeset(osmSettings, changesetId);
+        }
+    }
+
+    public async Task<List<BtcMapListing>> GetListingsNeedingReverification()
+    {
+        var cutoff = DateTimeOffset.UtcNow.AddMonths(-11);
+        await using var ctx = _dbContextFactory.CreateContext();
+        return await ctx.Listings
+            .Where(l => l.Status == ListingStatus.Active && l.LastVerifiedAt < cutoff)
+            .ToListAsync();
+    }
+
+    private static Dictionary<string, string> BuildAllTags(BtcMapStoreSettings settings, bool isNewNode)
+    {
+        var tags = OsmApiClient.BuildBitcoinTags(settings.AcceptsOnchain, settings.AcceptsLightning);
+
+        if (isNewNode)
+        {
+            tags["name"] = settings.BusinessName;
+
+            // Common amenity/shop categories
+            var shopCategories = new HashSet<string>
+            {
+                "supermarket", "convenience", "clothes", "electronics", "jewelry",
+                "hardware", "books", "gift", "general", "mall"
+            };
+
+            if (shopCategories.Contains(settings.Category))
+                tags["shop"] = settings.Category;
+            else
+                tags["amenity"] = settings.Category;
+
+            if (!string.IsNullOrWhiteSpace(settings.Street))
+                tags["addr:street"] = settings.Street;
+            if (!string.IsNullOrWhiteSpace(settings.City))
+                tags["addr:city"] = settings.City;
+            if (!string.IsNullOrWhiteSpace(settings.PostCode))
+                tags["addr:postcode"] = settings.PostCode;
+            if (!string.IsNullOrWhiteSpace(settings.Country))
+                tags["addr:country"] = settings.Country;
+        }
+
+        return tags;
+    }
+}
