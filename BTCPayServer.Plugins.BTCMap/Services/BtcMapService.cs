@@ -34,7 +34,7 @@ public class BtcMapService
     public async Task<BtcMapListing> GetListingForStore(string storeId)
     {
         await using var ctx = _dbContextFactory.CreateContext();
-        return await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId);
+        return await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId && l.Status != ListingStatus.Pending);
     }
 
     public async Task<List<OverpassElement>> SearchNearby(double lat, double lon, string name)
@@ -49,101 +49,149 @@ public class BtcMapService
 
     public async Task<BtcMapListing> CreateNewListing(string storeId, BtcMapStoreSettings settings)
     {
-        var osmSettings = await _osmAuthService.GetSettings();
-        var tags = BuildAllTags(settings, isNewNode: true);
+        var listing = new BtcMapListing
+        {
+            Id = Guid.NewGuid().ToString(),
+            StoreId = storeId,
+            OsmElementType = "node",
+            BusinessName = settings.BusinessName,
+            Category = settings.Category,
+            Latitude = settings.Latitude.Value,
+            Longitude = settings.Longitude.Value,
+            Street = settings.Street,
+            City = settings.City,
+            PostCode = settings.PostCode,
+            Country = settings.Country,
+            AcceptsOnchain = settings.AcceptsOnchain,
+            AcceptsLightning = settings.AcceptsLightning,
+            CreatedAt = DateTimeOffset.UtcNow,
+            LastVerifiedAt = DateTimeOffset.UtcNow,
+            Status = ListingStatus.Pending
+        };
 
-        var comment = $"Add Bitcoin payment tags for {settings.BusinessName} #btcmap";
-        var changesetId = await _osmApiClient.CreateChangeset(osmSettings, comment);
+        await using var ctx = _dbContextFactory.CreateContext();
+        var existing = await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId);
+        if (existing != null)
+            ctx.Listings.Remove(existing);
+        ctx.Listings.Add(listing);
+        await ctx.SaveChangesAsync();
+
         try
         {
-            var nodeId = await _osmApiClient.CreateNode(osmSettings, changesetId,
-                settings.Latitude, settings.Longitude, tags);
-
-            var listing = new BtcMapListing
+            var osmSettings = await _osmAuthService.GetSettings();
+            var tags = BuildAllTags(settings, isNewNode: true);
+            var comment = $"Add Bitcoin payment tags for {settings.BusinessName} #btcmap";
+            var changesetId = await _osmApiClient.CreateChangeset(osmSettings, comment);
+            try
             {
-                StoreId = storeId,
-                OsmElementType = "node",
-                OsmElementId = nodeId,
-                OsmElementVersion = 1,
-                BusinessName = settings.BusinessName,
-                Category = settings.Category,
-                Latitude = settings.Latitude,
-                Longitude = settings.Longitude,
-                Street = settings.Street,
-                City = settings.City,
-                PostCode = settings.PostCode,
-                Country = settings.Country,
-                AcceptsOnchain = settings.AcceptsOnchain,
-                AcceptsLightning = settings.AcceptsLightning,
-                CreatedAt = DateTimeOffset.UtcNow,
-                LastVerifiedAt = DateTimeOffset.UtcNow,
-                Status = ListingStatus.Active
-            };
+                var nodeId = await _osmApiClient.CreateNode(osmSettings, changesetId,
+                    settings.Latitude.Value, settings.Longitude.Value, tags);
 
-            await using var ctx = _dbContextFactory.CreateContext();
-            var existing = await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId);
-            if (existing != null)
-                ctx.Listings.Remove(existing);
-            ctx.Listings.Add(listing);
-            await ctx.SaveChangesAsync();
+                listing.OsmElementId = nodeId;
+                listing.OsmElementVersion = 1;
+                listing.Status = ListingStatus.Active;
+            }
+            finally
+            {
+                await _osmApiClient.CloseChangeset(osmSettings, changesetId);
+            }
+
+            await using var updateCtx = _dbContextFactory.CreateContext();
+            var dbListing = await updateCtx.Listings.FirstAsync(l => l.Id == listing.Id);
+            dbListing.OsmElementId = listing.OsmElementId;
+            dbListing.OsmElementVersion = listing.OsmElementVersion;
+            dbListing.Status = ListingStatus.Active;
+            await updateCtx.SaveChangesAsync();
 
             return listing;
         }
-        finally
+        catch (Exception ex)
         {
-            await _osmApiClient.CloseChangeset(osmSettings, changesetId);
+            _logger.LogError(ex, "OSM operation failed for pending listing {ListingId}, store {StoreId}", listing.Id, storeId);
+            await using var cleanupCtx = _dbContextFactory.CreateContext();
+            var pending = await cleanupCtx.Listings.FirstOrDefaultAsync(l => l.Id == listing.Id);
+            if (pending != null)
+            {
+                cleanupCtx.Listings.Remove(pending);
+                await cleanupCtx.SaveChangesAsync();
+            }
+            throw;
         }
     }
 
     public async Task<BtcMapListing> LinkToExistingElement(string storeId, BtcMapStoreSettings settings,
         string osmType, long osmId)
     {
-        var osmSettings = await _osmAuthService.GetSettings();
-        var element = await _osmApiClient.GetElement(osmSettings, osmType, osmId);
+        var listing = new BtcMapListing
+        {
+            Id = Guid.NewGuid().ToString(),
+            StoreId = storeId,
+            OsmElementType = osmType,
+            OsmElementId = osmId,
+            BusinessName = settings.BusinessName,
+            Category = settings.Category,
+            Latitude = settings.Latitude.Value,
+            Longitude = settings.Longitude.Value,
+            Street = settings.Street,
+            City = settings.City,
+            PostCode = settings.PostCode,
+            Country = settings.Country,
+            AcceptsOnchain = settings.AcceptsOnchain,
+            AcceptsLightning = settings.AcceptsLightning,
+            CreatedAt = DateTimeOffset.UtcNow,
+            LastVerifiedAt = DateTimeOffset.UtcNow,
+            Status = ListingStatus.Pending
+        };
 
-        var bitcoinTags = OsmApiClient.BuildBitcoinTags(settings.AcceptsOnchain, settings.AcceptsLightning);
-        foreach (var tag in bitcoinTags)
-            element.Tags[tag.Key] = tag.Value;
+        await using var ctx = _dbContextFactory.CreateContext();
+        var existing = await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId);
+        if (existing != null)
+            ctx.Listings.Remove(existing);
+        ctx.Listings.Add(listing);
+        await ctx.SaveChangesAsync();
 
-        var comment = $"Add Bitcoin payment tags for {settings.BusinessName} #btcmap";
-        var changesetId = await _osmApiClient.CreateChangeset(osmSettings, comment);
         try
         {
-            var newVersion = await _osmApiClient.UpdateElement(osmSettings, changesetId, element);
+            var osmSettings = await _osmAuthService.GetSettings();
+            var element = await _osmApiClient.GetElement(osmSettings, osmType, osmId);
 
-            var listing = new BtcMapListing
+            var bitcoinTags = OsmApiClient.BuildBitcoinTags(settings.AcceptsOnchain, settings.AcceptsLightning);
+            foreach (var tag in bitcoinTags)
+                element.Tags[tag.Key] = tag.Value;
+
+            var comment = $"Add Bitcoin payment tags for {settings.BusinessName} #btcmap";
+            var changesetId = await _osmApiClient.CreateChangeset(osmSettings, comment);
+            int newVersion;
+            try
             {
-                StoreId = storeId,
-                OsmElementType = osmType,
-                OsmElementId = osmId,
-                OsmElementVersion = newVersion,
-                BusinessName = settings.BusinessName,
-                Category = settings.Category,
-                Latitude = settings.Latitude,
-                Longitude = settings.Longitude,
-                Street = settings.Street,
-                City = settings.City,
-                PostCode = settings.PostCode,
-                Country = settings.Country,
-                AcceptsOnchain = settings.AcceptsOnchain,
-                AcceptsLightning = settings.AcceptsLightning,
-                CreatedAt = DateTimeOffset.UtcNow,
-                LastVerifiedAt = DateTimeOffset.UtcNow,
-                Status = ListingStatus.Active
-            };
+                newVersion = await _osmApiClient.UpdateElement(osmSettings, changesetId, element);
+            }
+            finally
+            {
+                await _osmApiClient.CloseChangeset(osmSettings, changesetId);
+            }
 
-            await using var ctx = _dbContextFactory.CreateContext();
-            var existing = await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId);
-            if (existing != null)
-                ctx.Listings.Remove(existing);
-            ctx.Listings.Add(listing);
-            await ctx.SaveChangesAsync();
+            await using var updateCtx = _dbContextFactory.CreateContext();
+            var dbListing = await updateCtx.Listings.FirstAsync(l => l.Id == listing.Id);
+            dbListing.OsmElementVersion = newVersion;
+            dbListing.Status = ListingStatus.Active;
+            await updateCtx.SaveChangesAsync();
 
+            listing.OsmElementVersion = newVersion;
+            listing.Status = ListingStatus.Active;
             return listing;
         }
-        finally
+        catch (Exception ex)
         {
-            await _osmApiClient.CloseChangeset(osmSettings, changesetId);
+            _logger.LogError(ex, "OSM operation failed for pending listing {ListingId}, store {StoreId}", listing.Id, storeId);
+            await using var cleanupCtx = _dbContextFactory.CreateContext();
+            var pending = await cleanupCtx.Listings.FirstOrDefaultAsync(l => l.Id == listing.Id);
+            if (pending != null)
+            {
+                cleanupCtx.Listings.Remove(pending);
+                await cleanupCtx.SaveChangesAsync();
+            }
+            throw;
         }
     }
 

@@ -30,9 +30,9 @@
                                 <h5 class="mb-1">@elementName</h5>
                                 <p class="mb-1 text-muted">
                                     @elementType — @element.Type/@element.Id
-                                    @if (element.Lat.HasValue && element.Lon.HasValue)
+                                    @if (element.EffectiveLat.HasValue && element.EffectiveLon.HasValue)
                                     {
-                                        <span>(@element.Lat.Value.ToString("F5"), @element.Lon.Value.ToString("F5"))</span>
+                                        <span>(@element.EffectiveLat.Value.ToString("F5"), @element.EffectiveLon.Value.ToString("F5"))</span>
                                     }
                                 </p>
                                 @if (hasBtc)
@@ -74,16 +74,16 @@
 
         <form method="post" asp-action="CreateListing" asp-route-storeId="@storeId">
             @Html.AntiForgeryToken()
-            <input type="hidden" name="BusinessName" value="@Model.Settings.BusinessName" />
-            <input type="hidden" name="Category" value="@Model.Settings.Category" />
-            <input type="hidden" name="Latitude" value="@Model.Settings.Latitude" />
-            <input type="hidden" name="Longitude" value="@Model.Settings.Longitude" />
-            <input type="hidden" name="Street" value="@Model.Settings.Street" />
-            <input type="hidden" name="City" value="@Model.Settings.City" />
-            <input type="hidden" name="PostCode" value="@Model.Settings.PostCode" />
-            <input type="hidden" name="Country" value="@Model.Settings.Country" />
-            <input type="hidden" name="AcceptsOnchain" value="@Model.Settings.AcceptsOnchain" />
-            <input type="hidden" name="AcceptsLightning" value="@Model.Settings.AcceptsLightning" />
+            <input type="hidden" name="Settings.BusinessName" value="@Model.Settings.BusinessName" />
+            <input type="hidden" name="Settings.Category" value="@Model.Settings.Category" />
+            <input type="hidden" name="Settings.Latitude" value="@Model.Settings.Latitude" />
+            <input type="hidden" name="Settings.Longitude" value="@Model.Settings.Longitude" />
+            <input type="hidden" name="Settings.Street" value="@Model.Settings.Street" />
+            <input type="hidden" name="Settings.City" value="@Model.Settings.City" />
+            <input type="hidden" name="Settings.PostCode" value="@Model.Settings.PostCode" />
+            <input type="hidden" name="Settings.Country" value="@Model.Settings.Country" />
+            <input type="hidden" name="Settings.AcceptsOnchain" value="@Model.Settings.AcceptsOnchain" />
+            <input type="hidden" name="Settings.AcceptsLightning" value="@Model.Settings.AcceptsLightning" />
             <button type="submit" class="btn btn-success">Create New OSM Node</button>
         </form>
 

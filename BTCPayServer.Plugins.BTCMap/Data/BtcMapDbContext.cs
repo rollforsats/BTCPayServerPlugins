@@ -22,6 +22,7 @@ public class BtcMapDbContext : DbContext
 
         modelBuilder.Entity<BtcMapListing>(b =>
         {
+            b.Property(e => e.StoreId).IsRequired();
             b.HasIndex(e => e.StoreId).IsUnique();
             b.HasIndex(e => new { e.Status, e.LastVerifiedAt });
         });

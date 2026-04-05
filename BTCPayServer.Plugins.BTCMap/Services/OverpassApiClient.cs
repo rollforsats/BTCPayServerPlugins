@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Net.Http;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using BTCPayServer.Plugins.BTCMap.Models;
@@ -31,14 +32,14 @@ public class OverpassApiClient
 
     public async Task<List<OverpassElement>> SearchNearby(double lat, double lon, int radiusMeters, string name)
     {
-        var escapedName = name.Replace("\"", "\\\"");
+        var escapedName = Regex.Escape(name).Replace("\"", "\\\"");
         var latStr = lat.ToString(CultureInfo.InvariantCulture);
         var lonStr = lon.ToString(CultureInfo.InvariantCulture);
 
         var query = $"""
             [out:json][timeout:25];
             nwr["name"~"{escapedName}",i](around:{radiusMeters},{latStr},{lonStr});
-            out body;
+            out body center;
             """;
 
         return await ExecuteQuery(query);
@@ -52,7 +53,7 @@ public class OverpassApiClient
         var query = $"""
             [out:json][timeout:25];
             nwr["currency:XBT"="yes"](around:50,{latStr},{lonStr});
-            out body;
+            out body center;
             """;
 
         return await ExecuteQuery(query);

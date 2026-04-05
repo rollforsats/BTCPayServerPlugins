@@ -26,7 +26,6 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
             modelBuilder.Entity("BTCPayServer.Plugins.BTCMap.Data.BtcMapListing", b =>
                 {
                     b.Property<string>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("text");
 
                     b.Property<bool>("AcceptsLightning")
@@ -75,6 +74,7 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
                         .HasColumnType("integer");
 
                     b.Property<string>("StoreId")
+                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<string>("Street")

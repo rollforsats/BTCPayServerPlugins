@@ -23,6 +23,24 @@ public class OverpassElement
     [JsonPropertyName("lon")]
     public double? Lon { get; set; }
 
+    [JsonPropertyName("center")]
+    public OverpassCenter Center { get; set; }
+
     [JsonPropertyName("tags")]
     public Dictionary<string, string> Tags { get; set; } = new();
+
+    [JsonIgnore]
+    public double? EffectiveLat => Lat ?? Center?.Lat;
+
+    [JsonIgnore]
+    public double? EffectiveLon => Lon ?? Center?.Lon;
+}
+
+public class OverpassCenter
+{
+    [JsonPropertyName("lat")]
+    public double Lat { get; set; }
+
+    [JsonPropertyName("lon")]
+    public double Lon { get; set; }
 }

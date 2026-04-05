@@ -101,6 +101,6 @@ public class UIBtcMapServerController : Controller
     {
         if (!string.IsNullOrEmpty(storeId))
             return RedirectToAction("Index", "UIBtcMapStore", new { storeId });
-        return RedirectToAction("Index", "UIBtcMapStore");
+        return RedirectToAction("ListStores", "UIStores");
     }
 }

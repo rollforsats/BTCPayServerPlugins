@@ -17,11 +17,11 @@ public class BtcMapStoreSettings
 
     [Required]
     [Range(-90, 90)]
-    public double Latitude { get; set; }
+    public double? Latitude { get; set; }
 
     [Required]
     [Range(-180, 180)]
-    public double Longitude { get; set; }
+    public double? Longitude { get; set; }
 
     public bool AcceptsOnchain { get; set; } = true;
     public bool AcceptsLightning { get; set; } = true;

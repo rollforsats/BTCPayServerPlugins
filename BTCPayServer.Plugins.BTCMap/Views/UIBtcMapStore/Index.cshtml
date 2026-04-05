@@ -72,7 +72,7 @@
                         </div>
                         <div class="form-group mb-3">
                             <label class="form-label">OSM OAuth Client Secret</label>
-                            @if (!string.IsNullOrEmpty(Model.OsmClientSecret))
+                            @if (Model.OsmClientSecretSet)
                             {
                                 <div class="input-group">
                                     <input name="osmClientSecret" class="form-control" type="password" placeholder="Leave blank to keep current" />
@@ -97,7 +97,7 @@
                         <button type="submit" class="btn btn-primary me-2">Save</button>
                     </form>
 
-                    @if (!string.IsNullOrEmpty(Model.OsmClientId) && !string.IsNullOrEmpty(Model.OsmClientSecret))
+                    @if (!string.IsNullOrEmpty(Model.OsmClientId) && Model.OsmClientSecretSet)
                     {
                         <a asp-controller="UIBtcMapServer" asp-action="ConnectOsm"
                            asp-route-returnStoreId="@storeId" class="btn btn-secondary mt-2">Connect OSM Account</a>

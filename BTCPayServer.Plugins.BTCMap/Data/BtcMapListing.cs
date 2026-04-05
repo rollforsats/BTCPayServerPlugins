@@ -1,13 +1,13 @@
 using System;
-using System.ComponentModel.DataAnnotations.Schema;
+using System.ComponentModel.DataAnnotations;
 
 namespace BTCPayServer.Plugins.BTCMap.Data;
 
 public class BtcMapListing
 {
-    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     public string Id { get; set; }
 
+    [Required]
     public string StoreId { get; set; }
     public string OsmElementType { get; set; }
     public long OsmElementId { get; set; }
@@ -31,5 +31,6 @@ public enum ListingStatus
 {
     Active,
     Unlisted,
-    Error
+    Error,
+    Pending
 }

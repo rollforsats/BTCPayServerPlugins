@@ -42,8 +42,8 @@ public class UIBtcMapStoreController : Controller
             IsMainnet = _osmAuthService.IsMainnet,
             IsAdmin = isAdmin,
             OsmDisplayName = osmSettings.OsmDisplayName,
-            OsmClientId = osmSettings.OsmClientId,
-            OsmClientSecret = osmSettings.OsmClientSecret,
+            OsmClientId = isAdmin ? osmSettings.OsmClientId : null,
+            OsmClientSecretSet = !string.IsNullOrEmpty(osmSettings.OsmClientSecret),
             ExistingListing = listing,
             StatusMessage = TempData["StatusMessage"]?.ToString()
         };
@@ -86,8 +86,8 @@ public class UIBtcMapStoreController : Controller
 
         try
         {
-            var duplicates = await _btcMapService.CheckDuplicates(model.Latitude, model.Longitude);
-            var results = await _btcMapService.SearchNearby(model.Latitude, model.Longitude, model.BusinessName);
+            var duplicates = await _btcMapService.CheckDuplicates(model.Latitude.Value, model.Longitude.Value);
+            var results = await _btcMapService.SearchNearby(model.Latitude.Value, model.Longitude.Value, model.BusinessName);
 
             return View("SearchResults", new BtcMapListingViewModel
             {
@@ -130,6 +130,18 @@ public class UIBtcMapStoreController : Controller
     [HttpPost("link")]
     public async Task<IActionResult> LinkExisting(string storeId, BtcMapStoreSettings model, string osmType, long osmId)
     {
+        if (!ModelState.IsValid)
+        {
+            TempData["StatusMessage"] = "Error: Please fill in all required fields.";
+            return RedirectToAction(nameof(Index), new { storeId });
+        }
+
+        if (osmType is not ("node" or "way"))
+        {
+            TempData["StatusMessage"] = "Error: Invalid OSM element type.";
+            return RedirectToAction(nameof(Index), new { storeId });
+        }
+
         try
         {
             await _btcMapService.LinkToExistingElement(storeId, model, osmType, osmId);

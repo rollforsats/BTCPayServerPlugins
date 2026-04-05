@@ -20,7 +20,7 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
                 columns: table => new
                 {
                     Id = table.Column<string>(type: "text", nullable: false),
-                    StoreId = table.Column<string>(type: "text", nullable: true),
+                    StoreId = table.Column<string>(type: "text", nullable: false),
                     OsmElementType = table.Column<string>(type: "text", nullable: true),
                     OsmElementId = table.Column<long>(type: "bigint", nullable: false),
                     OsmElementVersion = table.Column<int>(type: "integer", nullable: false),

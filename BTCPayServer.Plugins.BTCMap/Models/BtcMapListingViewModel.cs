@@ -12,7 +12,7 @@ public class BtcMapListingViewModel
     public bool IsAdmin { get; set; }
     public string OsmDisplayName { get; set; }
     public string OsmClientId { get; set; }
-    public string OsmClientSecret { get; set; }
+    public bool OsmClientSecretSet { get; set; }
     public List<OverpassElement> SearchResults { get; set; }
     public string StatusMessage { get; set; }
 }

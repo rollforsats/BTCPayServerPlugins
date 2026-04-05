@@ -16,6 +16,10 @@ for csproj in "$REPO_ROOT"/BTCPayServer.Plugins.*/BTCPayServer.Plugins.*.csproj;
     dotnet build "$(dirname "$csproj")"
 
     DLL="$(dirname "$csproj")/bin/Debug/net10.0/$NAME.dll"
+    if [ ! -f "$DLL" ]; then
+        echo "Error: Built DLL not found at $DLL" >&2
+        exit 1
+    fi
     if [ -n "$PLUGINS" ]; then
         PLUGINS="$PLUGINS;$DLL"
     else
