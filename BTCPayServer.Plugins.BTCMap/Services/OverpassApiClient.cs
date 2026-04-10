@@ -45,6 +45,36 @@ public class OverpassApiClient
         return await ExecuteQuery(query);
     }
 
+    public async Task<List<OverpassElement>> SearchByAddress(double lat, double lon, int radiusMeters, string street, string city)
+    {
+        var escapedStreet = Regex.Escape(street).Replace("\"", "\\\"");
+        var escapedCity = Regex.Escape(city).Replace("\"", "\\\"");
+        var latStr = lat.ToString(CultureInfo.InvariantCulture);
+        var lonStr = lon.ToString(CultureInfo.InvariantCulture);
+
+        var query = $"""
+            [out:json][timeout:25];
+            nwr["addr:street"~"{escapedStreet}",i]["addr:city"~"{escapedCity}",i](around:{radiusMeters},{latStr},{lonStr});
+            out body center;
+            """;
+
+        return await ExecuteQuery(query);
+    }
+
+    public async Task<List<OverpassElement>> SearchByCoordinates(double lat, double lon, int radiusMeters)
+    {
+        var latStr = lat.ToString(CultureInfo.InvariantCulture);
+        var lonStr = lon.ToString(CultureInfo.InvariantCulture);
+
+        var query = $"""
+            [out:json][timeout:25];
+            nwr["name"](around:{radiusMeters},{latStr},{lonStr});
+            out body center;
+            """;
+
+        return await ExecuteQuery(query);
+    }
+
     public async Task<List<OverpassElement>> CheckExistingBitcoinTags(double lat, double lon)
     {
         var latStr = lat.ToString(CultureInfo.InvariantCulture);

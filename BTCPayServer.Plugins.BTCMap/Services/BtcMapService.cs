@@ -37,9 +37,22 @@ public class BtcMapService
         return await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId && l.Status != ListingStatus.Pending);
     }
 
-    public async Task<List<OverpassElement>> SearchNearby(double lat, double lon, string name)
+    public async Task<List<OverpassElement>> SearchNearby(double lat, double lon, string name,
+        string street = null, string city = null)
     {
-        return await _overpassApiClient.SearchNearby(lat, lon, 50, name);
+        // 1. Try name search (200m radius)
+        var results = await _overpassApiClient.SearchNearby(lat, lon, 200, name);
+        if (results.Count > 0) return results;
+
+        // 2. Try address search if street+city provided (200m radius)
+        if (!string.IsNullOrWhiteSpace(street) && !string.IsNullOrWhiteSpace(city))
+        {
+            results = await _overpassApiClient.SearchByAddress(lat, lon, 200, street, city);
+            if (results.Count > 0) return results;
+        }
+
+        // 3. Fall back to all named places nearby (100m radius)
+        return await _overpassApiClient.SearchByCoordinates(lat, lon, 100);
     }
 
     public async Task<List<OverpassElement>> CheckDuplicates(double lat, double lon)
