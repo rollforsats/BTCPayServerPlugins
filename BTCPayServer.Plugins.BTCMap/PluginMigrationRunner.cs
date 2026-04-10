@@ -11,6 +11,9 @@ public class PluginMigrationRunner : IHostedService
 {
     private readonly BtcMapDbContextFactory _dbContextFactory;
     private readonly ISettingsRepository _settingsRepository;
+    private static readonly TaskCompletionSource<bool> _ready = new();
+
+    public static Task WaitForMigration => _ready.Task;
 
     public PluginMigrationRunner(
         ISettingsRepository settingsRepository,
@@ -22,15 +25,25 @@ public class PluginMigrationRunner : IHostedService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        var settings = await _settingsRepository.GetSettingAsync<BtcMapMigrationHistory>() ??
-                       new BtcMapMigrationHistory();
-        await using var ctx = _dbContextFactory.CreateContext();
-        await ctx.Database.MigrateAsync(cancellationToken);
-
-        if (!settings.InitialMigrationComplete)
+        try
         {
-            settings.InitialMigrationComplete = true;
-            await _settingsRepository.UpdateSetting(settings);
+            var settings = await _settingsRepository.GetSettingAsync<BtcMapMigrationHistory>() ??
+                           new BtcMapMigrationHistory();
+            await using var ctx = _dbContextFactory.CreateContext();
+            await ctx.Database.MigrateAsync(cancellationToken);
+
+            if (!settings.InitialMigrationComplete)
+            {
+                settings.InitialMigrationComplete = true;
+                await _settingsRepository.UpdateSetting(settings);
+            }
+
+            _ready.TrySetResult(true);
+        }
+        catch
+        {
+            _ready.TrySetResult(false);
+            throw;
         }
     }
 

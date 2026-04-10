@@ -95,6 +95,92 @@
                 </form>
 
                 <hr class="my-4" />
+                <h4 class="mb-3">BTCPay Server Directory</h4>
+                @if (!string.IsNullOrEmpty(Model.DirectoryExistingUrl))
+                {
+                    <div class="alert alert-success">
+                        Your store is listed in the <a href="https://directory.btcpayserver.org" target="_blank" rel="noopener noreferrer">BTCPay Server Directory</a>.
+                    </div>
+                }
+
+                @if (Model.DirectorySubmittedAt.HasValue)
+                {
+                    <div class="alert alert-info">
+                        You submitted to the BTCPay Server Directory on <strong>@Model.DirectorySubmittedAt.Value.ToString("yyyy-MM-dd")</strong>.
+                        The submission is reviewed manually by maintainers.
+                    </div>
+                    <form method="post" asp-action="DirectoryReset" asp-route-storeId="@storeId" class="mb-3">
+                        @Html.AntiForgeryToken()
+                        <button type="submit" class="btn btn-sm btn-outline-secondary">Submit Again</button>
+                    </form>
+                }
+                else
+                {
+                    <p class="text-secondary">
+                        List your business on <a href="https://directory.btcpayserver.org" target="_blank" rel="noopener noreferrer">directory.btcpayserver.org</a>.
+                        This will open a GitHub issue for review by the directory maintainers.
+                    </p>
+                    <div class="form-group mb-3">
+                        <label class="form-label">Website URL <span class="text-danger">*</span></label>
+                        <input type="text" id="dir_Url" class="form-control" placeholder="https://yourbusiness.com"
+                               value="@Model.Settings.DirectoryUrl" />
+                    </div>
+                    <div class="form-group mb-3">
+                        <label class="form-label">Description <span class="text-danger">*</span></label>
+                        <textarea id="dir_Description" class="form-control" rows="3" maxlength="180"
+                                  placeholder="Brief description of your business..."></textarea>
+                        <div class="form-text"><span id="dir_charCount">0</span>/180 characters</div>
+                    </div>
+                    <div class="form-group mb-3">
+                        <label class="form-label">Twitter / X</label>
+                        <input type="text" id="dir_Twitter" class="form-control" placeholder="@@yourhandle (optional)" />
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Type <span class="text-danger">*</span></label>
+                            <select id="dir_Type" class="form-select">
+                                <option value="merchants" selected>Merchants</option>
+                                <option value="apps">Apps</option>
+                                <option value="hosted-btcpay">Hosted BTCPay</option>
+                                <option value="non-profits">Non-Profits</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6" id="dir_subTypeGroup">
+                            <label class="form-label">Subcategory <span class="text-danger">*</span></label>
+                            <select id="dir_SubType" class="form-select">
+                                <option value="">Select a subcategory...</option>
+                                <option value="3d-printing">3D Printing</option>
+                                <option value="adult">Adult</option>
+                                <option value="appliances-furniture">Appliances &amp; Furniture</option>
+                                <option value="art">Art</option>
+                                <option value="books">Books</option>
+                                <option value="cryptocurrency-paraphernalia">Crypto Paraphernalia</option>
+                                <option value="domains-hosting-vpns">Domains, Hosting &amp; VPNs</option>
+                                <option value="education">Education</option>
+                                <option value="electronics">Electronics</option>
+                                <option value="fashion">Fashion</option>
+                                <option value="food">Food &amp; Drink</option>
+                                <option value="gambling">Gambling</option>
+                                <option value="gift-cards">Gift Cards</option>
+                                <option value="health-household">Health &amp; Household</option>
+                                <option value="holiday-travel">Holiday &amp; Travel</option>
+                                <option value="jewelry">Jewelry</option>
+                                <option value="payment-services">Payment Services</option>
+                                <option value="pets">Pets</option>
+                                <option value="services">Services</option>
+                                <option value="software-video-games">Software &amp; Video Games</option>
+                                <option value="sports">Sports</option>
+                                <option value="tools">Tools</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button type="button" id="directorySubmitBtn" class="btn btn-primary">Submit to BTCPay Directory</button>
+                    <div id="directoryFallback" class="mt-2" style="display:none">
+                        <small class="text-muted">Popup blocked? <a id="directoryFallbackLink" href="#" target="_blank" rel="noopener noreferrer">Click here to open the submission</a>.</small>
+                    </div>
+                }
+
+                <hr class="my-4" />
                 <form method="post" asp-action="Unlist" asp-route-storeId="@storeId">
                     @Html.AntiForgeryToken()
                     <button type="submit" class="btn btn-outline-danger"
@@ -191,11 +277,11 @@
                     </div>
 
                     <div class="form-check mb-2">
-                        <input asp-for="Settings.AcceptsOnchain" class="form-check-input" type="checkbox" checked />
+                        <input asp-for="Settings.AcceptsOnchain" class="form-check-input" type="checkbox" />
                         <label asp-for="Settings.AcceptsOnchain" class="form-check-label">Accepts on-chain Bitcoin</label>
                     </div>
                     <div class="form-check mb-3">
-                        <input asp-for="Settings.AcceptsLightning" class="form-check-input" type="checkbox" checked />
+                        <input asp-for="Settings.AcceptsLightning" class="form-check-input" type="checkbox" />
                         <label asp-for="Settings.AcceptsLightning" class="form-check-label">Accepts Lightning</label>
                     </div>
 
@@ -225,6 +311,7 @@
 </div>
 
 <script>
+    // Geocode button
     document.getElementById('geocodeBtn')?.addEventListener('click', async function() {
         const form = this.closest('form');
         const data = new FormData(form);
@@ -249,6 +336,71 @@
         } finally {
             btn.disabled = false;
             btn.textContent = 'Lookup Coordinates';
+        }
+    });
+
+    // Directory type/subtype toggle (active listing)
+    document.getElementById('dir_Type')?.addEventListener('change', function() {
+        const group = document.getElementById('dir_subTypeGroup');
+        if (group) group.style.display = this.value === 'merchants' ? '' : 'none';
+    });
+
+    // Character counter (active listing)
+    document.getElementById('dir_Description')?.addEventListener('input', function() {
+        document.getElementById('dir_charCount').textContent = this.value.length;
+    });
+
+    // Directory submit button (active listing)
+    document.getElementById('directorySubmitBtn')?.addEventListener('click', async function() {
+        const btn = this;
+        const url = document.getElementById('dir_Url')?.value;
+        const description = document.getElementById('dir_Description')?.value;
+        const type = document.getElementById('dir_Type')?.value;
+        const subType = document.getElementById('dir_SubType')?.value;
+        const twitter = document.getElementById('dir_Twitter')?.value;
+
+        if (!url || !description || !type) {
+            alert('Please fill in URL, description, and type.');
+            return;
+        }
+        if (type === 'merchants' && !subType) {
+            alert('Please select a subcategory.');
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Submitting...';
+
+        try {
+            const formData = new FormData();
+            formData.append('Settings.DirectoryUrl', url);
+            formData.append('Settings.DirectoryDescription', description);
+            formData.append('Settings.DirectoryType', type);
+            formData.append('Settings.DirectorySubType', subType || '');
+            formData.append('Settings.DirectoryTwitter', twitter || '');
+
+            const response = await fetch('@Url.Action("DirectorySubmit", "UIBtcMapStore", new { storeId })', {
+                method: 'POST',
+                body: formData,
+                headers: { 'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]')?.value }
+            });
+            const result = await response.json();
+            if (result.success) {
+                const w = window.open(result.issueUrl, '_blank', 'noopener,noreferrer');
+                if (!w) {
+                    document.getElementById('directoryFallbackLink').href = result.issueUrl;
+                    document.getElementById('directoryFallback').style.display = '';
+                } else {
+                    location.reload();
+                }
+            } else {
+                alert(result.message || 'Submission failed.');
+            }
+        } catch (e) {
+            alert('Failed to submit. Please try again.');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Submit to BTCPay Directory';
         }
     });
 

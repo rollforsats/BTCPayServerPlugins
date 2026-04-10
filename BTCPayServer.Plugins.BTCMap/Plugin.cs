@@ -37,6 +37,7 @@ public class Plugin : BaseBTCPayServerPlugin
         services.AddSingleton<OsmApiClient>();
         services.AddSingleton<OverpassApiClient>();
         services.AddSingleton<NominatimApiClient>();
+        services.AddSingleton<DirectoryService>();
 
         // IOverpassApiClient binding — dev fixture mode when BTCMAP_OVERPASS_SCENARIO is
         // set on non-mainnet Development builds, otherwise the real OverpassApiClient.
@@ -85,6 +86,11 @@ public class Plugin : BaseBTCPayServerPlugin
         services.AddHttpClient("NominatimApi", client =>
         {
             client.BaseAddress = new Uri("https://nominatim.openstreetmap.org/");
+            client.DefaultRequestHeaders.Add("User-Agent", "BTCPayServer-BtcMap-Plugin/1.0");
+        });
+        services.AddHttpClient("DirectoryApi", client =>
+        {
+            client.BaseAddress = new Uri("https://raw.githubusercontent.com/");
             client.DefaultRequestHeaders.Add("User-Agent", "BTCPayServer-BtcMap-Plugin/1.0");
         });
     }

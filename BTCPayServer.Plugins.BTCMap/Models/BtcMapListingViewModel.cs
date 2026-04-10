@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using BTCPayServer.Plugins.BTCMap.Data;
 
@@ -13,4 +14,6 @@ public class BtcMapListingViewModel
     public List<OverpassElement> SearchResults { get; set; }
     public string StatusMessage { get; set; }
     public string Address { get; set; }
+    public DateTimeOffset? DirectorySubmittedAt { get; set; }
+    public string DirectoryExistingUrl { get; set; }
 }

@@ -20,19 +20,26 @@ public class UIBtcMapStoreController : Controller
     private readonly BtcMapService _btcMapService;
     private readonly OsmAuthService _osmAuthService;
     private readonly NominatimApiClient _nominatimApiClient;
+    private readonly DirectoryService _directoryService;
+    private readonly IAuthorizationService _authorizationService;
 
     public UIBtcMapStoreController(
         BtcMapService btcMapService,
         OsmAuthService osmAuthService,
-        NominatimApiClient nominatimApiClient)
+        NominatimApiClient nominatimApiClient,
+        DirectoryService directoryService,
+        IAuthorizationService authorizationService)
     {
         _btcMapService = btcMapService;
         _osmAuthService = osmAuthService;
         _nominatimApiClient = nominatimApiClient;
+        _directoryService = directoryService;
+        _authorizationService = authorizationService;
     }
 
     private async Task<BtcMapListingViewModel> BuildViewModel(string storeId, BtcMapStoreSettings settings = null)
     {
+        await PluginMigrationRunner.WaitForMigration;
         var osmSettings = await _osmAuthService.GetSettings();
         var listing = await _btcMapService.GetListingForStore(storeId);
         var storeData = HttpContext.GetStoreData();
@@ -43,7 +50,8 @@ public class UIBtcMapStoreController : Controller
             IsMainnet = _osmAuthService.IsMainnet,
             OsmDisplayName = osmSettings.OsmDisplayName,
             ExistingListing = listing,
-            StatusMessage = TempData["StatusMessage"]?.ToString()
+            StatusMessage = TempData["StatusMessage"]?.ToString(),
+            DirectorySubmittedAt = listing?.DirectorySubmittedAt
         };
 
         if (listing != null)
@@ -70,7 +78,8 @@ public class UIBtcMapStoreController : Controller
                 PostCode = listing.PostCode,
                 Country = listing.Country,
                 AcceptsOnchain = listing.AcceptsOnchain,
-                AcceptsLightning = listing.AcceptsLightning
+                AcceptsLightning = listing.AcceptsLightning,
+                DirectoryUrl = storeData?.StoreWebsite
             };
         }
         else if (storeData != null)
@@ -84,8 +93,17 @@ public class UIBtcMapStoreController : Controller
             {
                 BusinessName = storeData.StoreName,
                 AcceptsOnchain = enabledIds.Any(id => string.Equals(id, "BTC-CHAIN", StringComparison.OrdinalIgnoreCase)),
-                AcceptsLightning = enabledIds.Any(id => string.Equals(id, "BTC-LN", StringComparison.OrdinalIgnoreCase))
+                AcceptsLightning = enabledIds.Any(id => string.Equals(id, "BTC-LN", StringComparison.OrdinalIgnoreCase)),
+                DirectoryUrl = storeData.StoreWebsite
             };
+        }
+
+        // Check if store is already listed in the directory
+        if (listing != null && !string.IsNullOrEmpty(storeData?.StoreWebsite))
+        {
+            var existingEntry = await _directoryService.CheckExistingListing(storeData.StoreWebsite);
+            if (existingEntry != null)
+                vm.DirectoryExistingUrl = existingEntry.Url;
         }
 
         return vm;
@@ -244,5 +262,44 @@ public class UIBtcMapStoreController : Controller
             return Json(new { success = false, message = "Address not found." });
 
         return Json(new { success = true, lat = result.Value.lat, lon = result.Value.lon });
+    }
+
+    [HttpPost("directory/submit")]
+    public async Task<IActionResult> DirectorySubmit(string storeId, [Bind(Prefix = "Settings")] BtcMapStoreSettings model)
+    {
+        if (string.IsNullOrWhiteSpace(model.DirectoryUrl) ||
+            string.IsNullOrWhiteSpace(model.DirectoryDescription) ||
+            string.IsNullOrWhiteSpace(model.DirectoryType))
+        {
+            return Json(new { success = false, message = "URL, description, and type are required." });
+        }
+
+        if (model.DirectoryType == "merchants" && string.IsNullOrWhiteSpace(model.DirectorySubType))
+            return Json(new { success = false, message = "Subcategory is required for merchants." });
+
+        var listing = await _btcMapService.GetListingForStore(storeId);
+        var name = listing?.BusinessName ?? model.BusinessName;
+        var country = listing?.Country ?? model.Country;
+
+        var issueUrl = _directoryService.BuildGitHubIssueUrl(
+            name,
+            model.DirectoryUrl,
+            model.DirectoryTwitter,
+            model.DirectoryType,
+            model.DirectorySubType,
+            country,
+            model.DirectoryDescription);
+
+        await _directoryService.RecordSubmission(storeId);
+
+        return Json(new { success = true, issueUrl });
+    }
+
+    [HttpPost("directory/reset")]
+    public async Task<IActionResult> DirectoryReset(string storeId)
+    {
+        await _directoryService.ClearSubmission(storeId);
+        TempData["StatusMessage"] = "Directory submission reset. You can submit again.";
+        return RedirectToAction(nameof(Index), new { storeId });
     }
 }
