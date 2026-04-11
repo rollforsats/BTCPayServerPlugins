@@ -13,14 +13,14 @@ public class BtcMapService
 {
     private readonly BtcMapDbContextFactory _dbContextFactory;
     private readonly OsmApiClient _osmApiClient;
-    private readonly OverpassApiClient _overpassApiClient;
+    private readonly IOverpassApiClient _overpassApiClient;
     private readonly OsmAuthService _osmAuthService;
     private readonly ILogger<BtcMapService> _logger;
 
     public BtcMapService(
         BtcMapDbContextFactory dbContextFactory,
         OsmApiClient osmApiClient,
-        OverpassApiClient overpassApiClient,
+        IOverpassApiClient overpassApiClient,
         OsmAuthService osmAuthService,
         ILogger<BtcMapService> logger)
     {

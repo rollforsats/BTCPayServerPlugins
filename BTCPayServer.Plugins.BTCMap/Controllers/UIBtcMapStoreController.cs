@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using BTCPayServer.Abstractions.Constants;
 using BTCPayServer.Client;
@@ -87,12 +89,22 @@ public class UIBtcMapStoreController : Controller
         try
         {
             var duplicates = await _btcMapService.CheckDuplicates(model.Latitude.Value, model.Longitude.Value);
-            var results = await _btcMapService.SearchNearby(model.Latitude.Value, model.Longitude.Value, model.BusinessName);
+            var nearby = await _btcMapService.SearchNearby(
+                model.Latitude.Value, model.Longitude.Value, model.BusinessName, model.Street, model.City);
+
+            // Merge Bitcoin-tagged duplicates (first) with name/address nearby matches, dedupe by OSM type+id
+            var seen = new HashSet<(string Type, long Id)>();
+            var merged = new List<OverpassElement>();
+            foreach (var el in duplicates.Concat(nearby))
+            {
+                if (seen.Add((el.Type, el.Id)))
+                    merged.Add(el);
+            }
 
             return View("SearchResults", new BtcMapListingViewModel
             {
                 Settings = model,
-                SearchResults = results,
+                SearchResults = merged,
                 IsMainnet = _osmAuthService.IsMainnet,
                 OsmConnected = true
             });

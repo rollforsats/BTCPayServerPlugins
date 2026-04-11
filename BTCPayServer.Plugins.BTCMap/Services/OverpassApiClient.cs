@@ -17,7 +17,7 @@ public class OverpassUnavailableException : Exception
         : base("The OpenStreetMap search service (Overpass API) is currently unavailable. Please try again later.") { }
 }
 
-public class OverpassApiClient
+public class OverpassApiClient : IOverpassApiClient
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<OverpassApiClient> _logger;

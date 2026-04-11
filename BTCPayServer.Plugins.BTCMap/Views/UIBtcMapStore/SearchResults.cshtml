@@ -1,3 +1,4 @@
+@using System.Globalization
 @using BTCPayServer.Abstractions.Extensions
 @using BTCPayServer.Plugins.BTCMap.Models
 @using BTCPayServer.Plugins.BTCMap.Views
@@ -6,6 +7,62 @@
 @{
     ViewData.SetActivePage(BtcMapNavPages.Store, "BTC Map — Search Results");
     var storeId = Context.GetRouteValue("storeId")?.ToString();
+    var inv = CultureInfo.InvariantCulture;
+
+    string latStr = Model.Settings.Latitude?.ToString(inv) ?? "";
+    string lonStr = Model.Settings.Longitude?.ToString(inv) ?? "";
+    string onchainStr = Model.Settings.AcceptsOnchain ? "true" : "false";
+    string lightningStr = Model.Settings.AcceptsLightning ? "true" : "false";
+
+    string[] categoryKeys = { "amenity", "shop", "tourism", "office", "craft" };
+    string[] addressOrder = { "addr:city", "addr:postcode", "addr:country" };
+    string[] bitcoinTagKeys = { "currency:XBT", "payment:bitcoin", "payment:onchain", "payment:lightning" };
+
+    string BuildAddressLine(Dictionary<string, string> tags)
+    {
+        var parts = new List<string>();
+        var streetBits = new List<string>();
+        if (tags.TryGetValue("addr:housenumber", out var hn)) streetBits.Add(hn);
+        if (tags.TryGetValue("addr:street", out var st)) streetBits.Add(st);
+        if (streetBits.Count > 0) parts.Add(string.Join(" ", streetBits));
+        foreach (var key in addressOrder)
+        {
+            if (tags.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v))
+                parts.Add(v);
+        }
+        return string.Join(", ", parts);
+    }
+
+    (string Key, string Value)? BuildCategoryLabel(Dictionary<string, string> tags)
+    {
+        foreach (var key in categoryKeys)
+        {
+            if (tags.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v))
+            {
+                var label = inv.TextInfo.ToTitleCase(key);
+                return (label, v);
+            }
+        }
+        return null;
+    }
+
+    string FormatDistance(double? lat2, double? lon2)
+    {
+        if (!Model.Settings.Latitude.HasValue || !Model.Settings.Longitude.HasValue) return null;
+        if (!lat2.HasValue || !lon2.HasValue) return null;
+        const double R = 6_371_000;
+        var lat1 = Model.Settings.Latitude.Value;
+        var lon1 = Model.Settings.Longitude.Value;
+        var dLat = (lat2.Value - lat1) * Math.PI / 180;
+        var dLon = (lon2.Value - lon1) * Math.PI / 180;
+        var a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2)
+              + Math.Cos(lat1 * Math.PI / 180) * Math.Cos(lat2.Value * Math.PI / 180)
+              * Math.Sin(dLon / 2) * Math.Sin(dLon / 2);
+        var meters = R * 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+        return meters < 1000
+            ? $"{Math.Round(meters)} m away"
+            : $"{(meters / 1000).ToString("F1", inv)} km away";
+    }
 }
 
 <div class="row">
@@ -14,51 +71,88 @@
 
         @if (Model.SearchResults != null && Model.SearchResults.Count > 0)
         {
-            <p>We found existing locations near your coordinates. If your business is already on OpenStreetMap, select it below to add Bitcoin acceptance tags.</p>
+            <p>We found existing locations near your coordinates. If your business is already on OpenStreetMap, link to it below — even if it already has Bitcoin tags, linking associates it with your BTCPay store for future updates and reverification.</p>
 
             <div class="list-group mb-4">
                 @foreach (var element in Model.SearchResults)
                 {
-                    var elementName = element.Tags.ContainsKey("name") ? element.Tags["name"] : $"{element.Type}/{element.Id}";
-                    var elementType = element.Tags.ContainsKey("amenity") ? element.Tags["amenity"] :
-                                     element.Tags.ContainsKey("shop") ? element.Tags["shop"] : element.Type;
-                    var hasBtc = element.Tags.ContainsKey("currency:XBT");
+                    var tags = element.Tags ?? new Dictionary<string, string>();
+                    var elementName = tags.TryGetValue("name", out var n) && !string.IsNullOrWhiteSpace(n)
+                        ? n
+                        : $"{element.Type}/{element.Id}";
+                    var category = BuildCategoryLabel(tags);
+                    var address = BuildAddressLine(tags);
+                    var hasBtc = tags.ContainsKey("currency:XBT") || tags.ContainsKey("payment:bitcoin");
+                    var distance = FormatDistance(element.EffectiveLat, element.EffectiveLon);
+                    var existingBitcoinTags = bitcoinTagKeys
+                        .Where(k => tags.ContainsKey(k))
+                        .Select(k => $"{k}={tags[k]}")
+                        .ToList();
 
                     <div class="list-group-item">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div>
+                        <div class="d-flex justify-content-between align-items-start gap-3">
+                            <div class="flex-grow-1">
                                 <h5 class="mb-1">@elementName</h5>
-                                <p class="mb-1 text-muted">
-                                    @elementType — @element.Type/@element.Id
+                                <p class="mb-1 text-muted small">
+                                    @if (category.HasValue)
+                                    {
+                                        <span>@category.Value.Key: @category.Value.Value</span>
+                                        <span class="mx-1">·</span>
+                                    }
+                                    <span>@element.Type/@element.Id</span>
+                                </p>
+                                @if (!string.IsNullOrWhiteSpace(address))
+                                {
+                                    <p class="mb-1 small">@address</p>
+                                }
+                                <p class="mb-1 text-muted small">
                                     @if (element.EffectiveLat.HasValue && element.EffectiveLon.HasValue)
                                     {
-                                        <span>(@element.EffectiveLat.Value.ToString("F5"), @element.EffectiveLon.Value.ToString("F5"))</span>
+                                        <span>@element.EffectiveLat.Value.ToString("F5", inv), @element.EffectiveLon.Value.ToString("F5", inv)</span>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(distance))
+                                    {
+                                        <span class="mx-1">·</span>
+                                        <span>@distance</span>
                                     }
                                 </p>
                                 @if (hasBtc)
                                 {
-                                    <span class="badge bg-warning text-dark">Already has Bitcoin tags</span>
+                                    <div class="mt-2">
+                                        <span class="badge bg-warning text-dark">Already has Bitcoin tags</span>
+                                        @if (existingBitcoinTags.Count > 0)
+                                        {
+                                            <div class="small text-muted mt-1">@string.Join("  ", existingBitcoinTags)</div>
+                                        }
+                                    </div>
                                 }
                             </div>
-                            @if (!hasBtc)
-                            {
-                                <form method="post" asp-action="LinkExisting" asp-route-storeId="@storeId">
-                                    @Html.AntiForgeryToken()
-                                    <input type="hidden" name="BusinessName" value="@Model.Settings.BusinessName" />
-                                    <input type="hidden" name="Category" value="@Model.Settings.Category" />
-                                    <input type="hidden" name="Latitude" value="@Model.Settings.Latitude" />
-                                    <input type="hidden" name="Longitude" value="@Model.Settings.Longitude" />
-                                    <input type="hidden" name="Street" value="@Model.Settings.Street" />
-                                    <input type="hidden" name="City" value="@Model.Settings.City" />
-                                    <input type="hidden" name="PostCode" value="@Model.Settings.PostCode" />
-                                    <input type="hidden" name="Country" value="@Model.Settings.Country" />
-                                    <input type="hidden" name="AcceptsOnchain" value="@Model.Settings.AcceptsOnchain" />
-                                    <input type="hidden" name="AcceptsLightning" value="@Model.Settings.AcceptsLightning" />
-                                    <input type="hidden" name="osmType" value="@element.Type" />
-                                    <input type="hidden" name="osmId" value="@element.Id" />
+                            <form method="post" asp-action="LinkExisting" asp-route-storeId="@storeId" class="flex-shrink-0">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="BusinessName" value="@Model.Settings.BusinessName" />
+                                <input type="hidden" name="Category" value="@Model.Settings.Category" />
+                                <input type="hidden" name="Latitude" value="@latStr" />
+                                <input type="hidden" name="Longitude" value="@lonStr" />
+                                <input type="hidden" name="Street" value="@Model.Settings.Street" />
+                                <input type="hidden" name="City" value="@Model.Settings.City" />
+                                <input type="hidden" name="PostCode" value="@Model.Settings.PostCode" />
+                                <input type="hidden" name="Country" value="@Model.Settings.Country" />
+                                <input type="hidden" name="AcceptsOnchain" value="@onchainStr" />
+                                <input type="hidden" name="AcceptsLightning" value="@lightningStr" />
+                                <input type="hidden" name="osmType" value="@element.Type" />
+                                <input type="hidden" name="osmId" value="@element.Id" />
+                                @if (hasBtc)
+                                {
+                                    <button type="submit" class="btn btn-sm btn-outline-primary"
+                                            title="This location is already on BTC Map. Linking associates it with your BTCPay store for reverification.">
+                                        Link existing listing
+                                    </button>
+                                }
+                                else
+                                {
                                     <button type="submit" class="btn btn-sm btn-primary">Link to this</button>
-                                </form>
-                            }
+                                }
+                            </form>
                         </div>
                     </div>
                 }
@@ -76,14 +170,14 @@
             @Html.AntiForgeryToken()
             <input type="hidden" name="Settings.BusinessName" value="@Model.Settings.BusinessName" />
             <input type="hidden" name="Settings.Category" value="@Model.Settings.Category" />
-            <input type="hidden" name="Settings.Latitude" value="@Model.Settings.Latitude" />
-            <input type="hidden" name="Settings.Longitude" value="@Model.Settings.Longitude" />
+            <input type="hidden" name="Settings.Latitude" value="@latStr" />
+            <input type="hidden" name="Settings.Longitude" value="@lonStr" />
             <input type="hidden" name="Settings.Street" value="@Model.Settings.Street" />
             <input type="hidden" name="Settings.City" value="@Model.Settings.City" />
             <input type="hidden" name="Settings.PostCode" value="@Model.Settings.PostCode" />
             <input type="hidden" name="Settings.Country" value="@Model.Settings.Country" />
-            <input type="hidden" name="Settings.AcceptsOnchain" value="@Model.Settings.AcceptsOnchain" />
-            <input type="hidden" name="Settings.AcceptsLightning" value="@Model.Settings.AcceptsLightning" />
+            <input type="hidden" name="Settings.AcceptsOnchain" value="@onchainStr" />
+            <input type="hidden" name="Settings.AcceptsLightning" value="@lightningStr" />
             <button type="submit" class="btn btn-success">Create New OSM Node</button>
         </form>
 
