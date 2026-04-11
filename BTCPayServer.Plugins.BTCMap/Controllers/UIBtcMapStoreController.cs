@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using BTCPayServer.Abstractions.Constants;
+using BTCPayServer.Abstractions.Extensions;
 using BTCPayServer.Client;
+using BTCPayServer.Data;
 using BTCPayServer.Plugins.BTCMap.Models;
 using BTCPayServer.Plugins.BTCMap.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -37,6 +39,7 @@ public class UIBtcMapStoreController : Controller
         var osmSettings = await _osmAuthService.GetSettings();
         var listing = await _btcMapService.GetListingForStore(storeId);
         var isAdmin = (await _authorizationService.AuthorizeAsync(User, Policies.CanModifyServerSettings)).Succeeded;
+        var storeData = HttpContext.GetStoreData();
 
         var vm = new BtcMapListingViewModel
         {
@@ -68,6 +71,20 @@ public class UIBtcMapStoreController : Controller
                 Country = listing.Country,
                 AcceptsOnchain = listing.AcceptsOnchain,
                 AcceptsLightning = listing.AcceptsLightning
+            };
+        }
+        else if (storeData != null)
+        {
+            // Auto-populate from BTCPay store data for new listings (no settings posted yet,
+            // no prior listing). BTCPay's StoreData only exposes StoreName/StoreWebsite — no
+            // address fields — so the merchant still has to enter address/coordinates manually
+            // (or click "Lookup Coordinates").
+            var enabledIds = storeData.GetEnabledPaymentIds().Select(p => p.ToString()).ToArray();
+            vm.Settings = new BtcMapStoreSettings
+            {
+                BusinessName = storeData.StoreName,
+                AcceptsOnchain = enabledIds.Any(id => id.EndsWith("-CHAIN", StringComparison.OrdinalIgnoreCase)),
+                AcceptsLightning = enabledIds.Any(id => id.EndsWith("-LN", StringComparison.OrdinalIgnoreCase))
             };
         }
 
