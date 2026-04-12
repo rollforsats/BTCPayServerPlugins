@@ -92,13 +92,14 @@ public class DirectoryService
         }
     }
 
-    public async Task RecordSubmission(string storeId)
+    public async Task RecordSubmission(string storeId, string submittedUrl)
     {
         await using var ctx = _dbContextFactory.CreateContext();
         var listing = await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId);
         if (listing != null)
         {
             listing.DirectorySubmittedAt = DateTimeOffset.UtcNow;
+            listing.DirectorySubmittedUrl = submittedUrl;
             await ctx.SaveChangesAsync();
         }
     }
@@ -110,6 +111,7 @@ public class DirectoryService
         if (listing != null)
         {
             listing.DirectorySubmittedAt = null;
+            listing.DirectorySubmittedUrl = null;
             await ctx.SaveChangesAsync();
         }
     }

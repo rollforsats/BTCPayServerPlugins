@@ -37,7 +37,8 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
                     CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     LastVerifiedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     Status = table.Column<int>(type: "integer", nullable: false),
-                    DirectorySubmittedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true)
+                    DirectorySubmittedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    DirectorySubmittedUrl = table.Column<string>(type: "text", nullable: true)
                 },
                 constraints: table =>
                 {

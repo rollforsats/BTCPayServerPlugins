@@ -16,4 +16,6 @@ public class BtcMapListingViewModel
     public string Address { get; set; }
     public DateTimeOffset? DirectorySubmittedAt { get; set; }
     public string DirectoryExistingUrl { get; set; }
+    public string DirectoryExistingName { get; set; }
+    public string DirectoryExistingType { get; set; }
 }

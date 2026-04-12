@@ -94,16 +94,42 @@
                     <button type="submit" class="btn btn-primary me-2">Update Tags</button>
                 </form>
 
+                <form method="post" asp-action="Unlist" asp-route-storeId="@storeId" class="mt-3">
+                    @Html.AntiForgeryToken()
+                    <button type="submit" class="btn btn-outline-danger"
+                            onclick="return confirm('Remove your business from BTC Map? This will remove Bitcoin acceptance tags from OpenStreetMap.');">
+                        Remove from BTC Map
+                    </button>
+                </form>
+
                 <hr class="my-4" />
                 <h4 class="mb-3">BTCPay Server Directory</h4>
                 @if (!string.IsNullOrEmpty(Model.DirectoryExistingUrl))
                 {
-                    <div class="alert alert-success">
-                        Your store is listed in the <a href="https://directory.btcpayserver.org" target="_blank" rel="noopener noreferrer">BTCPay Server Directory</a>.
+                    // Build a deep link into directory.btcpayserver.org pre-filtered to this entry.
+                    // Hash format: #type=Merchants&q=Display+Name (type capitalized, q form-encoded).
+                    var directoryDeepLink = "https://directory.btcpayserver.org";
+                    if (!string.IsNullOrEmpty(Model.DirectoryExistingType) && !string.IsNullOrEmpty(Model.DirectoryExistingName))
+                    {
+                        var capitalizedType = string.Join("-",
+                            Model.DirectoryExistingType.Split('-').Select(p =>
+                                p.Length == 0 ? p : char.ToUpperInvariant(p[0]) + p.Substring(1)));
+                        directoryDeepLink = $"https://directory.btcpayserver.org/#type={capitalizedType}&q={System.Net.WebUtility.UrlEncode(Model.DirectoryExistingName)}";
+                    }
+
+                    <div class="alert alert-success mb-0">
+                        <h5 class="alert-heading">Your store is listed in the BTCPay Server Directory</h5>
+                        <p class="mb-2">
+                            Listed as <strong>@Model.DirectoryExistingName</strong>.
+                        </p>
+                        <p class="mb-0">
+                            <a href="@Model.DirectoryExistingUrl" class="alert-link" target="_blank" rel="noopener noreferrer">@Model.DirectoryExistingUrl</a>
+                            &middot;
+                            <a href="@directoryDeepLink" class="alert-link" target="_blank" rel="noopener noreferrer">View on directory.btcpayserver.org</a>
+                        </p>
                     </div>
                 }
-
-                @if (Model.DirectorySubmittedAt.HasValue)
+                else if (Model.DirectorySubmittedAt.HasValue)
                 {
                     <div class="alert alert-info">
                         You submitted to the BTCPay Server Directory on <strong>@Model.DirectorySubmittedAt.Value.ToString("yyyy-MM-dd")</strong>.
@@ -140,8 +166,6 @@
                             <label class="form-label">Type <span class="text-danger">*</span></label>
                             <select id="dir_Type" class="form-select">
                                 <option value="merchants" selected>Merchants</option>
-                                <option value="apps">Apps</option>
-                                <option value="hosted-btcpay">Hosted BTCPay</option>
                                 <option value="non-profits">Non-Profits</option>
                             </select>
                         </div>
@@ -179,15 +203,6 @@
                         <small class="text-muted">Popup blocked? <a id="directoryFallbackLink" href="#" target="_blank" rel="noopener noreferrer">Click here to open the submission</a>.</small>
                     </div>
                 }
-
-                <hr class="my-4" />
-                <form method="post" asp-action="Unlist" asp-route-storeId="@storeId">
-                    @Html.AntiForgeryToken()
-                    <button type="submit" class="btn btn-outline-danger"
-                            onclick="return confirm('Remove your business from BTC Map? This will remove Bitcoin acceptance tags from OpenStreetMap.');">
-                        Remove from BTC Map
-                    </button>
-                </form>
             }
             else
             {
@@ -386,13 +401,14 @@
             });
             const result = await response.json();
             if (result.success) {
-                const w = window.open(result.issueUrl, '_blank', 'noopener,noreferrer');
-                if (!w) {
-                    document.getElementById('directoryFallbackLink').href = result.issueUrl;
-                    document.getElementById('directoryFallback').style.display = '';
-                } else {
-                    location.reload();
-                }
+                // Open the GitHub issue in a new tab. Note: window.open with `noopener` returns
+                // null in modern browsers even on success (the noopener flag severs the window
+                // reference by design), so we can't reliably detect popup-blocking from the
+                // return value. Always reload so the page reflects the new pending state.
+                // Popup-blocked is a vanishingly rare case here because the call is inside a
+                // direct user-click handler, which all modern browsers treat as trusted.
+                window.open(result.issueUrl, '_blank', 'noopener,noreferrer');
+                location.reload();
             } else {
                 alert(result.message || 'Submission failed.');
             }

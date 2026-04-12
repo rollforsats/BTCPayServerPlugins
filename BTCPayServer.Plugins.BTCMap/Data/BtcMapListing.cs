@@ -26,6 +26,7 @@ public class BtcMapListing
     public DateTimeOffset LastVerifiedAt { get; set; }
     public ListingStatus Status { get; set; }
     public DateTimeOffset? DirectorySubmittedAt { get; set; }
+    public string DirectorySubmittedUrl { get; set; }
 }
 
 public enum ListingStatus

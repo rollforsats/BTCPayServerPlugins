@@ -98,12 +98,24 @@ public class UIBtcMapStoreController : Controller
             };
         }
 
-        // Check if store is already listed in the directory
-        if (listing != null && !string.IsNullOrEmpty(storeData?.StoreWebsite))
+        // Check if store is already listed in the directory. Prefer the URL the merchant
+        // actually submitted (DirectorySubmittedUrl), fall back to the BTCPay store website
+        // for listings created before DirectorySubmittedUrl was introduced.
+        if (listing != null)
         {
-            var existingEntry = await _directoryService.CheckExistingListing(storeData.StoreWebsite);
-            if (existingEntry != null)
-                vm.DirectoryExistingUrl = existingEntry.Url;
+            var checkUrl = !string.IsNullOrEmpty(listing.DirectorySubmittedUrl)
+                ? listing.DirectorySubmittedUrl
+                : storeData?.StoreWebsite;
+            if (!string.IsNullOrEmpty(checkUrl))
+            {
+                var existingEntry = await _directoryService.CheckExistingListing(checkUrl);
+                if (existingEntry != null)
+                {
+                    vm.DirectoryExistingUrl = existingEntry.Url;
+                    vm.DirectoryExistingName = existingEntry.Name;
+                    vm.DirectoryExistingType = existingEntry.Type;
+                }
+            }
         }
 
         return vm;
@@ -274,8 +286,35 @@ public class UIBtcMapStoreController : Controller
             return Json(new { success = false, message = "URL, description, and type are required." });
         }
 
+        // Type allow-list — the BTC Map plugin only accepts directory submissions for the
+        // two physical-location-bearing types. Other types (apps, hosted-btcpay) are valid
+        // upstream but out of scope for this plugin's mental model.
+        if (model.DirectoryType != "merchants" && model.DirectoryType != "non-profits")
+        {
+            return Json(new
+            {
+                success = false,
+                message = "Only Merchants and Non-Profits can be submitted from the BTC Map plugin."
+            });
+        }
+
         if (model.DirectoryType == "merchants" && string.IsNullOrWhiteSpace(model.DirectorySubType))
             return Json(new { success = false, message = "Subcategory is required for merchants." });
+
+        // Re-check merchants.json against the URL the user actually typed (not the BTCPay
+        // store website). The page-load duplicate alert in BuildViewModel only checks
+        // storeData.StoreWebsite, but the user can type any URL into the form, so we need
+        // a second check here against the actual submission URL.
+        var existing = await _directoryService.CheckExistingListing(model.DirectoryUrl);
+        if (existing != null)
+        {
+            var existingName = string.IsNullOrEmpty(existing.Name) ? "an existing entry" : existing.Name;
+            return Json(new
+            {
+                success = false,
+                message = $"This URL is already listed in the BTCPay Server Directory as \"{existingName}\" ({existing.Url}). No need to submit again."
+            });
+        }
 
         var listing = await _btcMapService.GetListingForStore(storeId);
         var name = listing?.BusinessName ?? model.BusinessName;
@@ -290,7 +329,7 @@ public class UIBtcMapStoreController : Controller
             country,
             model.DirectoryDescription);
 
-        await _directoryService.RecordSubmission(storeId);
+        await _directoryService.RecordSubmission(storeId, model.DirectoryUrl);
 
         return Json(new { success = true, issueUrl });
     }

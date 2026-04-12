@@ -52,6 +52,9 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
                     b.Property<DateTimeOffset?>("DirectorySubmittedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("DirectorySubmittedUrl")
+                        .HasColumnType("text");
+
                     b.Property<DateTimeOffset>("LastVerifiedAt")
                         .HasColumnType("timestamp with time zone");
 
