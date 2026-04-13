@@ -83,8 +83,8 @@ public class UIBtcMapStoreController : Controller
             vm.Settings = new BtcMapStoreSettings
             {
                 BusinessName = storeData.StoreName,
-                AcceptsOnchain = enabledIds.Any(id => id.EndsWith("-CHAIN", StringComparison.OrdinalIgnoreCase)),
-                AcceptsLightning = enabledIds.Any(id => id.EndsWith("-LN", StringComparison.OrdinalIgnoreCase))
+                AcceptsOnchain = enabledIds.Any(id => string.Equals(id, "BTC-CHAIN", StringComparison.OrdinalIgnoreCase)),
+                AcceptsLightning = enabledIds.Any(id => string.Equals(id, "BTC-LN", StringComparison.OrdinalIgnoreCase))
             };
         }
 
