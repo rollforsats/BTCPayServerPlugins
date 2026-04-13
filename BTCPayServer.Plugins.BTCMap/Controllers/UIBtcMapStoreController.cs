@@ -320,6 +320,9 @@ public class UIBtcMapStoreController : Controller
         var name = listing?.BusinessName ?? model.BusinessName;
         var country = listing?.Country ?? model.Country;
 
+        if (string.IsNullOrWhiteSpace(name))
+            return Json(new { success = false, message = "Business name is required." });
+
         var issueUrl = _directoryService.BuildGitHubIssueUrl(
             name,
             model.DirectoryUrl,
