@@ -19,7 +19,8 @@ public class Plugin : BaseBTCPayServerPlugin
     public override void Execute(IServiceCollection services)
     {
         // UI extensions
-        services.AddSingleton<IUIExtension>(new UIExtension("BtcMapStoreNav", "store-integrations-nav"));
+        services.AddUIExtension("store-integrations-nav", "BtcMapStoreNav");
+        services.AddUIExtension("server-nav", "BtcMapServerNav");
 
         // Database
         services.AddHostedService<PluginMigrationRunner>();

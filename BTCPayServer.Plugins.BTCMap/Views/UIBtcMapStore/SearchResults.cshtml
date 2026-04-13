@@ -1,11 +1,12 @@
 @using System.Globalization
 @using BTCPayServer.Abstractions.Extensions
+@using BTCPayServer.Abstractions.Models
 @using BTCPayServer.Plugins.BTCMap.Models
-@using BTCPayServer.Plugins.BTCMap.Views
 @model BtcMapListingViewModel
 
 @{
-    ViewData.SetActivePage(BtcMapNavPages.Store, "BTC Map — Search Results");
+    ViewData.SetLayoutModel(new LayoutModel("BtcMapStore", "BTC Map — Search Results")
+        .SetCategory(WellKnownCategories.Store));
     var storeId = Context.GetRouteValue("storeId")?.ToString();
     var inv = CultureInfo.InvariantCulture;
 

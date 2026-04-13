@@ -1,10 +1,11 @@
 @using BTCPayServer.Abstractions.Extensions
+@using BTCPayServer.Abstractions.Models
 @using BTCPayServer.Plugins.BTCMap.Models
-@using BTCPayServer.Plugins.BTCMap.Views
 @model ServerSettingsViewModel
 
 @{
-    ViewData.SetActivePage(BtcMapNavPages.Server, "BTC Map");
+    ViewData.SetLayoutModel(new LayoutModel("BtcMapServer", "BTC Map")
+        .SetCategory(WellKnownCategories.Server));
     var apiLabel = Model.IsMainnet ? "Production" : "Development";
     var registerUrl = Model.IsMainnet
         ? "https://www.openstreetmap.org/oauth2/applications/new"
@@ -22,9 +23,7 @@
             </div>
         }
 
-        <h3 class="mb-3">
-            BTC Map Integration
-        </h3>
+        <h3 class="mb-3">BTC Map Integration</h3>
         <p class="text-secondary">
             List your merchants on <a href="https://btcmap.org" target="_blank" rel="noopener noreferrer">BTC Map</a> automatically.
             BTC Map shows Bitcoin-accepting businesses worldwide by reading OpenStreetMap data.
@@ -82,13 +81,17 @@
                 <span>Signed in as <strong>@Model.OsmDisplayName</strong></span>
             </div>
             <form method="post" asp-action="DisconnectOsm">
+                @Html.AntiForgeryToken()
                 <button type="submit" class="btn btn-outline-danger">Disconnect OSM Account</button>
             </form>
         }
         else
         {
             <p class="text-secondary">Connect an OpenStreetMap account to enable writing Bitcoin acceptance data.</p>
-            <a asp-action="ConnectOsm" class="btn btn-secondary">Connect OSM Account</a>
+            @if (!string.IsNullOrEmpty(Model.OsmClientId) && !string.IsNullOrEmpty(Model.OsmClientSecret))
+            {
+                <a asp-action="ConnectOsm" class="btn btn-secondary">Connect OSM Account</a>
+            }
         }
     </div>
 </div>

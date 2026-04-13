@@ -20,35 +20,28 @@ public class UIBtcMapStoreController : Controller
     private readonly BtcMapService _btcMapService;
     private readonly OsmAuthService _osmAuthService;
     private readonly NominatimApiClient _nominatimApiClient;
-    private readonly IAuthorizationService _authorizationService;
 
     public UIBtcMapStoreController(
         BtcMapService btcMapService,
         OsmAuthService osmAuthService,
-        NominatimApiClient nominatimApiClient,
-        IAuthorizationService authorizationService)
+        NominatimApiClient nominatimApiClient)
     {
         _btcMapService = btcMapService;
         _osmAuthService = osmAuthService;
         _nominatimApiClient = nominatimApiClient;
-        _authorizationService = authorizationService;
     }
 
     private async Task<BtcMapListingViewModel> BuildViewModel(string storeId, BtcMapStoreSettings settings = null)
     {
         var osmSettings = await _osmAuthService.GetSettings();
         var listing = await _btcMapService.GetListingForStore(storeId);
-        var isAdmin = (await _authorizationService.AuthorizeAsync(User, Policies.CanModifyServerSettings)).Succeeded;
         var storeData = HttpContext.GetStoreData();
 
         var vm = new BtcMapListingViewModel
         {
             OsmConnected = !string.IsNullOrEmpty(osmSettings.OsmAccessToken),
             IsMainnet = _osmAuthService.IsMainnet,
-            IsAdmin = isAdmin,
             OsmDisplayName = osmSettings.OsmDisplayName,
-            OsmClientId = isAdmin ? osmSettings.OsmClientId : null,
-            OsmClientSecretSet = !string.IsNullOrEmpty(osmSettings.OsmClientSecret),
             ExistingListing = listing,
             StatusMessage = TempData["StatusMessage"]?.ToString()
         };

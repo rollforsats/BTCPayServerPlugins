@@ -20,8 +20,23 @@ public class UIBtcMapServerController : Controller
         _osmAuthService = osmAuthService;
     }
 
-    [HttpPost("save")]
-    public async Task<IActionResult> SaveSettings(string osmClientId, string osmClientSecret, string returnStoreId)
+    [HttpGet]
+    public async Task<IActionResult> Index()
+    {
+        var settings = await _osmAuthService.GetSettings();
+        return View(new ServerSettingsViewModel
+        {
+            OsmClientId = settings.OsmClientId,
+            OsmClientSecret = settings.OsmClientSecret,
+            IsConnected = !string.IsNullOrEmpty(settings.OsmAccessToken),
+            OsmDisplayName = settings.OsmDisplayName,
+            IsMainnet = _osmAuthService.IsMainnet,
+            StatusMessage = TempData["StatusMessage"]?.ToString()
+        });
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> Index(string osmClientId, string osmClientSecret)
     {
         var settings = await _osmAuthService.GetSettings();
         settings.OsmClientId = osmClientId?.Trim();
@@ -30,22 +45,21 @@ public class UIBtcMapServerController : Controller
         await _osmAuthService.SaveSettings(settings);
 
         TempData["StatusMessage"] = "OSM settings saved.";
-        return RedirectToStore(returnStoreId);
+        return RedirectToAction(nameof(Index));
     }
 
     [HttpGet("connect")]
-    public async Task<IActionResult> ConnectOsm(string returnStoreId)
+    public async Task<IActionResult> ConnectOsm()
     {
         var settings = await _osmAuthService.GetSettings();
         if (string.IsNullOrEmpty(settings.OsmClientId) || string.IsNullOrEmpty(settings.OsmClientSecret))
         {
             TempData["StatusMessage"] = "Error: Please save OAuth Client ID and Secret first.";
-            return RedirectToStore(returnStoreId);
+            return RedirectToAction(nameof(Index));
         }
 
         var state = Guid.NewGuid().ToString("N");
         TempData["OAuthState"] = state;
-        TempData["OAuthReturnStoreId"] = returnStoreId;
 
         var redirectUri = Url.Action(nameof(OAuthCallback), "UIBtcMapServer", null, Request.Scheme);
         var authUrl = _osmAuthService.GetAuthorizationUrl(settings, redirectUri, state);
@@ -56,12 +70,11 @@ public class UIBtcMapServerController : Controller
     public async Task<IActionResult> OAuthCallback(string code, string state)
     {
         var expectedState = TempData["OAuthState"]?.ToString();
-        var returnStoreId = TempData["OAuthReturnStoreId"]?.ToString();
 
         if (string.IsNullOrEmpty(expectedState) || expectedState != state)
         {
             TempData["StatusMessage"] = "Error: Invalid OAuth state. Please try again.";
-            return RedirectToStore(returnStoreId);
+            return RedirectToAction(nameof(Index));
         }
 
         try
@@ -82,11 +95,11 @@ public class UIBtcMapServerController : Controller
             TempData["StatusMessage"] = $"Error: OAuth failed — {ex.Message}";
         }
 
-        return RedirectToStore(returnStoreId);
+        return RedirectToAction(nameof(Index));
     }
 
     [HttpPost("disconnect")]
-    public async Task<IActionResult> DisconnectOsm(string returnStoreId)
+    public async Task<IActionResult> DisconnectOsm()
     {
         var settings = await _osmAuthService.GetSettings();
         settings.OsmAccessToken = null;
@@ -94,13 +107,6 @@ public class UIBtcMapServerController : Controller
         await _osmAuthService.SaveSettings(settings);
 
         TempData["StatusMessage"] = "OSM account disconnected.";
-        return RedirectToStore(returnStoreId);
-    }
-
-    private IActionResult RedirectToStore(string storeId)
-    {
-        if (!string.IsNullOrEmpty(storeId))
-            return RedirectToAction("Index", "UIBtcMapStore", new { storeId });
-        return RedirectToAction("ListStores", "UIStores");
+        return RedirectToAction(nameof(Index));
     }
 }
