@@ -317,11 +317,17 @@ public class UIBtcMapStoreController : Controller
         }
 
         var listing = await _btcMapService.GetListingForStore(storeId);
-        var name = listing?.BusinessName ?? model.BusinessName;
-        var country = listing?.Country ?? model.Country;
+        if (listing == null)
+        {
+            return Json(new
+            {
+                success = false,
+                message = "Create the BTC Map listing before submitting to the BTCPay Server Directory."
+            });
+        }
 
-        if (string.IsNullOrWhiteSpace(name))
-            return Json(new { success = false, message = "Business name is required." });
+        var name = listing.BusinessName;
+        var country = listing.Country;
 
         var issueUrl = _directoryService.BuildGitHubIssueUrl(
             name,
