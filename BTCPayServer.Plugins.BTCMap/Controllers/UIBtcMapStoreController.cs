@@ -10,6 +10,7 @@ using BTCPayServer.Plugins.BTCMap.Models;
 using BTCPayServer.Plugins.BTCMap.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace BTCPayServer.Plugins.BTCMap.Controllers;
 
@@ -22,19 +23,22 @@ public class UIBtcMapStoreController : Controller
     private readonly NominatimApiClient _nominatimApiClient;
     private readonly DirectoryService _directoryService;
     private readonly IAuthorizationService _authorizationService;
+    private readonly ILogger<UIBtcMapStoreController> _logger;
 
     public UIBtcMapStoreController(
         BtcMapService btcMapService,
         OsmAuthService osmAuthService,
         NominatimApiClient nominatimApiClient,
         DirectoryService directoryService,
-        IAuthorizationService authorizationService)
+        IAuthorizationService authorizationService,
+        ILogger<UIBtcMapStoreController> logger)
     {
         _btcMapService = btcMapService;
         _osmAuthService = osmAuthService;
         _nominatimApiClient = nominatimApiClient;
         _directoryService = directoryService;
         _authorizationService = authorizationService;
+        _logger = logger;
     }
 
     private async Task<BtcMapListingViewModel> BuildViewModel(string storeId, BtcMapStoreSettings settings = null)
@@ -158,8 +162,9 @@ public class UIBtcMapStoreController : Controller
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "BTC Map search failed for store {StoreId}", storeId);
             var vm = await BuildViewModel(storeId, model);
-            vm.StatusMessage = $"Error: Search failed — {ex.Message}";
+            vm.StatusMessage = "Error: Search failed. Please try again or check the server logs.";
             return View("Index", vm);
         }
     }
@@ -180,7 +185,8 @@ public class UIBtcMapStoreController : Controller
         }
         catch (Exception ex)
         {
-            TempData["StatusMessage"] = $"Error: Failed to create listing — {ex.Message}";
+            _logger.LogError(ex, "Failed to create BTC Map listing for store {StoreId}", storeId);
+            TempData["StatusMessage"] = "Error: Failed to create listing. Please try again or check the server logs.";
         }
 
         return RedirectToAction(nameof(Index), new { storeId });
@@ -214,7 +220,8 @@ public class UIBtcMapStoreController : Controller
         }
         catch (Exception ex)
         {
-            TempData["StatusMessage"] = $"Error: Failed to update OSM element — {ex.Message}";
+            _logger.LogError(ex, "Failed to link OSM element for store {StoreId}", storeId);
+            TempData["StatusMessage"] = "Error: Failed to update OSM element. Please try again or check the server logs.";
         }
 
         return RedirectToAction(nameof(Index), new { storeId });
@@ -243,7 +250,8 @@ public class UIBtcMapStoreController : Controller
         }
         catch (Exception ex)
         {
-            TempData["StatusMessage"] = $"Error: Failed to update listing — {ex.Message}";
+            _logger.LogError(ex, "Failed to update BTC Map listing for store {StoreId}", storeId);
+            TempData["StatusMessage"] = "Error: Failed to update listing. Please try again or check the server logs.";
         }
 
         return RedirectToAction(nameof(Index), new { storeId });
@@ -259,7 +267,8 @@ public class UIBtcMapStoreController : Controller
         }
         catch (Exception ex)
         {
-            TempData["StatusMessage"] = $"Error: Failed to remove listing — {ex.Message}";
+            _logger.LogError(ex, "Failed to unlist store {StoreId} from BTC Map", storeId);
+            TempData["StatusMessage"] = "Error: Failed to remove listing. Please try again or check the server logs.";
         }
 
         return RedirectToAction(nameof(Index), new { storeId });
@@ -283,9 +292,10 @@ public class UIBtcMapStoreController : Controller
 
             return Json(new { success = true, lat = result.Value.lat, lon = result.Value.lon });
         }
-        catch
+        catch (Exception ex)
         {
-            return Json(new { success = false, message = "Address not found." });
+            _logger.LogError(ex, "Geocoding failed for store {StoreId}", storeId);
+            return Json(new { success = false, message = "Geocoding service unavailable. Please try again." });
         }
     }
 

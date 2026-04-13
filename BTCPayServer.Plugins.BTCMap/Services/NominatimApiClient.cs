@@ -49,7 +49,6 @@ public class NominatimApiClient
             var lon = double.Parse(first.GetProperty("lon").GetString()!,
                 System.Globalization.CultureInfo.InvariantCulture);
 
-            _lastRequest = DateTimeOffset.UtcNow;
             return (lat, lon);
         }
         catch (Exception ex)
@@ -59,6 +58,7 @@ public class NominatimApiClient
         }
         finally
         {
+            _lastRequest = DateTimeOffset.UtcNow;
             _rateLimiter.Release();
         }
     }

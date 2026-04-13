@@ -77,21 +77,25 @@ public class Plugin : BaseBTCPayServerPlugin
         services.AddHttpClient("OsmApi", client =>
         {
             client.DefaultRequestHeaders.Add("User-Agent", "BTCPayServer-BtcMap-Plugin/1.0");
+            client.Timeout = TimeSpan.FromSeconds(20);
         });
         services.AddHttpClient("OverpassApi", client =>
         {
             client.BaseAddress = new Uri("https://overpass-api.de/");
             client.DefaultRequestHeaders.Add("User-Agent", "BTCPayServer-BtcMap-Plugin/1.0");
+            client.Timeout = TimeSpan.FromSeconds(30);
         });
         services.AddHttpClient("NominatimApi", client =>
         {
             client.BaseAddress = new Uri("https://nominatim.openstreetmap.org/");
             client.DefaultRequestHeaders.Add("User-Agent", "BTCPayServer-BtcMap-Plugin/1.0");
+            client.Timeout = TimeSpan.FromSeconds(20);
         });
         services.AddHttpClient("DirectoryApi", client =>
         {
             client.BaseAddress = new Uri("https://raw.githubusercontent.com/");
             client.DefaultRequestHeaders.Add("User-Agent", "BTCPayServer-BtcMap-Plugin/1.0");
+            client.Timeout = TimeSpan.FromSeconds(20);
         });
     }
 }
