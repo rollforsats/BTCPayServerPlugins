@@ -25,4 +25,11 @@ public class BtcMapStoreSettings
 
     public bool AcceptsOnchain { get; set; } = true;
     public bool AcceptsLightning { get; set; } = true;
+
+    // Directory submission fields (validated only in directory flow)
+    public string DirectoryUrl { get; set; }
+    public string DirectoryDescription { get; set; }
+    public string DirectoryTwitter { get; set; }
+    public string DirectoryType { get; set; }
+    public string DirectorySubType { get; set; }
 }
