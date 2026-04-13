@@ -195,6 +195,12 @@ public class UIBtcMapStoreController : Controller
             return RedirectToAction(nameof(Index), new { storeId });
         }
 
+        if (osmId <= 0)
+        {
+            TempData["StatusMessage"] = "Error: Invalid OSM element ID.";
+            return RedirectToAction(nameof(Index), new { storeId });
+        }
+
         if (osmType is not ("node" or "way"))
         {
             TempData["StatusMessage"] = "Error: Invalid OSM element type.";
@@ -269,11 +275,18 @@ public class UIBtcMapStoreController : Controller
             return Json(new { success = false, message = "Address not found." });
         }
 
-        var result = await _nominatimApiClient.Geocode(model.Street, model.City, model.PostCode, model.Country);
-        if (result == null)
-            return Json(new { success = false, message = "Address not found." });
+        try
+        {
+            var result = await _nominatimApiClient.Geocode(model.Street, model.City, model.PostCode, model.Country);
+            if (result == null)
+                return Json(new { success = false, message = "Address not found." });
 
-        return Json(new { success = true, lat = result.Value.lat, lon = result.Value.lon });
+            return Json(new { success = true, lat = result.Value.lat, lon = result.Value.lon });
+        }
+        catch
+        {
+            return Json(new { success = false, message = "Address not found." });
+        }
     }
 
     [HttpPost("directory/submit")]
