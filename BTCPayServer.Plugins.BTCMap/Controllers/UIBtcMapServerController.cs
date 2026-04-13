@@ -6,6 +6,7 @@ using BTCPayServer.Plugins.BTCMap.Models;
 using BTCPayServer.Plugins.BTCMap.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace BTCPayServer.Plugins.BTCMap.Controllers;
 
@@ -14,10 +15,12 @@ namespace BTCPayServer.Plugins.BTCMap.Controllers;
 public class UIBtcMapServerController : Controller
 {
     private readonly OsmAuthService _osmAuthService;
+    private readonly ILogger<UIBtcMapServerController> _logger;
 
-    public UIBtcMapServerController(OsmAuthService osmAuthService)
+    public UIBtcMapServerController(OsmAuthService osmAuthService, ILogger<UIBtcMapServerController> logger)
     {
         _osmAuthService = osmAuthService;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -39,9 +42,24 @@ public class UIBtcMapServerController : Controller
     public async Task<IActionResult> Index(string osmClientId, string osmClientSecret)
     {
         var settings = await _osmAuthService.GetSettings();
-        settings.OsmClientId = osmClientId?.Trim();
-        if (!string.IsNullOrEmpty(osmClientSecret?.Trim()))
-            settings.OsmClientSecret = osmClientSecret.Trim();
+        var newClientId = osmClientId?.Trim();
+        var newClientSecret = osmClientSecret?.Trim();
+
+        var credentialsChanged =
+            !string.Equals(newClientId, settings.OsmClientId, StringComparison.Ordinal) ||
+            (!string.IsNullOrEmpty(newClientSecret) &&
+             !string.Equals(newClientSecret, settings.OsmClientSecret, StringComparison.Ordinal));
+
+        settings.OsmClientId = newClientId;
+        if (!string.IsNullOrEmpty(newClientSecret))
+            settings.OsmClientSecret = newClientSecret;
+
+        if (credentialsChanged)
+        {
+            settings.OsmAccessToken = null;
+            settings.OsmDisplayName = null;
+        }
+
         await _osmAuthService.SaveSettings(settings);
 
         TempData["StatusMessage"] = "OSM settings saved.";
@@ -92,7 +110,8 @@ public class UIBtcMapServerController : Controller
         }
         catch (Exception ex)
         {
-            TempData["StatusMessage"] = $"Error: OAuth failed — {ex.Message}";
+            _logger.LogError(ex, "OSM OAuth authentication failed");
+            TempData["StatusMessage"] = "Error: OAuth authentication failed. Please try again or contact the administrator.";
         }
 
         return RedirectToAction(nameof(Index));

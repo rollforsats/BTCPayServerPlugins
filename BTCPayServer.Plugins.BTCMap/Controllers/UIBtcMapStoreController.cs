@@ -187,6 +187,12 @@ public class UIBtcMapStoreController : Controller
     [HttpPost("update")]
     public async Task<IActionResult> UpdateListing(string storeId, [Bind(Prefix = "Settings")] BtcMapStoreSettings model)
     {
+        if (!ModelState.IsValid)
+        {
+            TempData["StatusMessage"] = "Error: Invalid settings.";
+            return RedirectToAction(nameof(Index), new { storeId });
+        }
+
         var listing = await _btcMapService.GetListingForStore(storeId);
         if (listing == null)
         {
@@ -226,6 +232,13 @@ public class UIBtcMapStoreController : Controller
     [HttpPost("geocode")]
     public async Task<IActionResult> Geocode(string storeId, [Bind(Prefix = "Settings")] BtcMapStoreSettings model)
     {
+        if (string.IsNullOrWhiteSpace(model.Street) &&
+            string.IsNullOrWhiteSpace(model.City) &&
+            string.IsNullOrWhiteSpace(model.Country))
+        {
+            return Json(new { success = false, message = "Address not found." });
+        }
+
         var result = await _nominatimApiClient.Geocode(model.Street, model.City, model.PostCode, model.Country);
         if (result == null)
             return Json(new { success = false, message = "Address not found." });

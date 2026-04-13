@@ -1,4 +1,5 @@
 @using System.Globalization
+@using System.Linq
 @using BTCPayServer.Abstractions.Extensions
 @using BTCPayServer.Abstractions.Models
 @using BTCPayServer.Plugins.BTCMap.Models
@@ -83,7 +84,7 @@
                         : $"{element.Type}/{element.Id}";
                     var category = BuildCategoryLabel(tags);
                     var address = BuildAddressLine(tags);
-                    var hasBtc = tags.ContainsKey("currency:XBT") || tags.ContainsKey("payment:bitcoin");
+                    var hasBtc = bitcoinTagKeys.Any(k => tags.ContainsKey(k));
                     var distance = FormatDistance(element.EffectiveLat, element.EffectiveLon);
                     var existingBitcoinTags = bitcoinTagKeys
                         .Where(k => tags.ContainsKey(k))
