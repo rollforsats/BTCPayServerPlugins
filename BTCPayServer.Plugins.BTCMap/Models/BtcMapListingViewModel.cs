@@ -15,4 +15,5 @@ public class BtcMapListingViewModel
     public bool OsmClientSecretSet { get; set; }
     public List<OverpassElement> SearchResults { get; set; }
     public string StatusMessage { get; set; }
+    public string Address { get; set; }
 }

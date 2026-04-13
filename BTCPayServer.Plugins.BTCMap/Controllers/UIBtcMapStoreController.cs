@@ -53,6 +53,13 @@ public class UIBtcMapStoreController : Controller
             StatusMessage = TempData["StatusMessage"]?.ToString()
         };
 
+        if (listing != null)
+        {
+            var parts = new[] { listing.Street, listing.City, listing.PostCode, listing.Country }
+                .Where(p => !string.IsNullOrWhiteSpace(p));
+            vm.Address = string.Join(", ", parts);
+        }
+
         if (settings != null)
         {
             vm.Settings = settings;

@@ -125,6 +125,10 @@
                     <dt class="col-sm-3">Business Name</dt><dd class="col-sm-9">@Model.ExistingListing.BusinessName</dd>
                     <dt class="col-sm-3">Category</dt><dd class="col-sm-9">@Model.ExistingListing.Category</dd>
                     <dt class="col-sm-3">Coordinates</dt><dd class="col-sm-9">@Model.ExistingListing.Latitude, @Model.ExistingListing.Longitude</dd>
+                    @if (!string.IsNullOrEmpty(Model.Address))
+                    {
+                        <dt class="col-sm-3">Address</dt><dd class="col-sm-9">@Model.Address</dd>
+                    }
                     <dt class="col-sm-3">OSM Element</dt><dd class="col-sm-9"><a href="@osmBaseUrl/@Model.ExistingListing.OsmElementType/@Model.ExistingListing.OsmElementId" target="_blank" rel="noopener noreferrer">@Model.ExistingListing.OsmElementType/@Model.ExistingListing.OsmElementId</a></dd>
                     <dt class="col-sm-3">Last Verified</dt><dd class="col-sm-9">@Model.ExistingListing.LastVerifiedAt.ToString("yyyy-MM-dd")</dd>
                     <dt class="col-sm-3">On-chain</dt><dd class="col-sm-9">@(Model.ExistingListing.AcceptsOnchain ? "Yes" : "No")</dd>
