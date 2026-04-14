@@ -129,16 +129,28 @@
                                     </div>
                                 }
                             </div>
-                            <form method="post" asp-action="LinkExisting" asp-route-storeId="@storeId" class="flex-shrink-0">
+                            @{
+                                    var elLat = element.EffectiveLat?.ToString(inv) ?? latStr;
+                                    var elLon = element.EffectiveLon?.ToString(inv) ?? lonStr;
+                                    tags.TryGetValue("addr:street", out var elStreet);
+                                    var elStreetFull = elStreet ?? "";
+                                    if (tags.TryGetValue("addr:housenumber", out var elHn) && !string.IsNullOrWhiteSpace(elStreet))
+                                        elStreetFull = elHn + " " + elStreet;
+                                    tags.TryGetValue("addr:city", out var elCity);
+                                    tags.TryGetValue("addr:postcode", out var elPostCode);
+                                    tags.TryGetValue("addr:country", out var elCountry);
+                                    var elCategory = category.HasValue ? category.Value.Value : Model.Settings.Category;
+                                }
+                                <form method="post" asp-action="LinkExisting" asp-route-storeId="@storeId" class="flex-shrink-0">
                                 @Html.AntiForgeryToken()
-                                <input type="hidden" name="BusinessName" value="@Model.Settings.BusinessName" />
-                                <input type="hidden" name="Category" value="@Model.Settings.Category" />
-                                <input type="hidden" name="Latitude" value="@latStr" />
-                                <input type="hidden" name="Longitude" value="@lonStr" />
-                                <input type="hidden" name="Street" value="@Model.Settings.Street" />
-                                <input type="hidden" name="City" value="@Model.Settings.City" />
-                                <input type="hidden" name="PostCode" value="@Model.Settings.PostCode" />
-                                <input type="hidden" name="Country" value="@Model.Settings.Country" />
+                                <input type="hidden" name="BusinessName" value="@elementName" />
+                                <input type="hidden" name="Category" value="@elCategory" />
+                                <input type="hidden" name="Latitude" value="@elLat" />
+                                <input type="hidden" name="Longitude" value="@elLon" />
+                                <input type="hidden" name="Street" value="@elStreetFull" />
+                                <input type="hidden" name="City" value="@elCity" />
+                                <input type="hidden" name="PostCode" value="@elPostCode" />
+                                <input type="hidden" name="Country" value="@elCountry" />
                                 <input type="hidden" name="AcceptsOnchain" value="@onchainStr" />
                                 <input type="hidden" name="AcceptsLightning" value="@lightningStr" />
                                 <input type="hidden" name="osmType" value="@element.Type" />
