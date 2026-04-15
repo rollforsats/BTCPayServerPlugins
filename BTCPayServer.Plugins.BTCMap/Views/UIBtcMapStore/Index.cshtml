@@ -54,6 +54,29 @@
         {
             if (Model.ExistingListing != null && Model.ExistingListing.Status == ListingStatus.Active)
             {
+                @if (Model.DaysUntilVerificationExpires.HasValue && Model.DaysUntilVerificationExpires.Value <= 30)
+                {
+                    var isExpired = Model.DaysUntilVerificationExpires.Value <= 0;
+                    var alertClass = isExpired ? "alert-danger" : "alert-warning";
+                    var btnClass = isExpired ? "btn btn-danger" : "btn btn-warning";
+                    <div class="alert @alertClass d-flex align-items-center justify-content-between">
+                        <span>
+                            @if (isExpired)
+                            {
+                                <text>Your BTC Map verification has expired. Confirm you still accept Bitcoin to stay listed.</text>
+                            }
+                            else
+                            {
+                                <text>Your BTC Map verification expires in @Model.DaysUntilVerificationExpires days. Confirm you still accept Bitcoin to stay listed.</text>
+                            }
+                        </span>
+                        <form method="post" asp-action="ConfirmVerification" asp-route-storeId="@storeId">
+                            @Html.AntiForgeryToken()
+                            <button type="submit" class="@btnClass text-nowrap ms-3">Confirm</button>
+                        </form>
+                    </div>
+                }
+
                 <div class="alert alert-success">
                     Your business is listed on BTC Map.
                 </div>

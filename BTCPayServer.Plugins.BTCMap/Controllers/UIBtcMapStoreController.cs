@@ -6,6 +6,7 @@ using BTCPayServer.Abstractions.Constants;
 using BTCPayServer.Abstractions.Extensions;
 using BTCPayServer.Client;
 using BTCPayServer.Data;
+using BTCPayServer.Plugins.BTCMap.Data;
 using BTCPayServer.Plugins.BTCMap.Models;
 using BTCPayServer.Plugins.BTCMap.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -63,6 +64,27 @@ public class UIBtcMapStoreController : Controller
             var parts = new[] { listing.Street, listing.City, listing.PostCode, listing.Country }
                 .Where(p => !string.IsNullOrWhiteSpace(p));
             vm.Address = string.Join(", ", parts);
+
+            if (listing.Status == ListingStatus.Active)
+            {
+                var verifiedAt = listing.LastVerifiedAt;
+
+                // Dev-only override: BTCMAP_VERIFICATION_AGE shifts the display calculation
+                // so verification banners can be tested without waiting 11 months.
+                var ageOverride = Environment.GetEnvironmentVariable("BTCMAP_VERIFICATION_AGE");
+                if (!string.IsNullOrEmpty(ageOverride) && !_osmAuthService.IsMainnet)
+                {
+                    verifiedAt = ageOverride switch
+                    {
+                        "expiring" => DateTimeOffset.UtcNow.AddDays(-320), // ~10.5 months ago
+                        "expired" => DateTimeOffset.UtcNow.AddMonths(-12),
+                        _ => verifiedAt
+                    };
+                }
+
+                var expiresAt = verifiedAt.AddMonths(11);
+                vm.DaysUntilVerificationExpires = (int)(expiresAt - DateTimeOffset.UtcNow).TotalDays;
+            }
         }
 
         if (settings != null)
@@ -373,4 +395,29 @@ public class UIBtcMapStoreController : Controller
         TempData["StatusMessage"] = "Directory submission reset. You can submit again.";
         return RedirectToAction(nameof(Index), new { storeId });
     }
+
+    [HttpPost("confirm-verification")]
+    public async Task<IActionResult> ConfirmVerification(string storeId)
+    {
+        var listing = await _btcMapService.GetListingForStore(storeId);
+        if (listing == null || listing.Status != ListingStatus.Active)
+        {
+            TempData["StatusMessage"] = "Error: No active listing found for this store.";
+            return RedirectToAction(nameof(Index), new { storeId });
+        }
+
+        try
+        {
+            await _btcMapService.ReverifyListing(listing);
+            TempData["StatusMessage"] = "Verification confirmed. Your BTC Map listing has been updated.";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to confirm verification for store {StoreId}", storeId);
+            TempData["StatusMessage"] = "Error: Failed to update verification. Please try again or check the server logs.";
+        }
+
+        return RedirectToAction(nameof(Index), new { storeId });
+    }
+
 }

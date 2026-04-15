@@ -18,4 +18,5 @@ public class BtcMapListingViewModel
     public string DirectoryExistingUrl { get; set; }
     public string DirectoryExistingName { get; set; }
     public string DirectoryExistingType { get; set; }
+    public int? DaysUntilVerificationExpires { get; set; }
 }

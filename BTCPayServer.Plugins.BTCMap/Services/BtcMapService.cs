@@ -314,15 +314,6 @@ public class BtcMapService
         }
     }
 
-    public async Task<List<BtcMapListing>> GetListingsNeedingReverification()
-    {
-        var cutoff = DateTimeOffset.UtcNow.AddMonths(-11);
-        await using var ctx = _dbContextFactory.CreateContext();
-        return await ctx.Listings
-            .Where(l => l.Status == ListingStatus.Active && l.LastVerifiedAt < cutoff)
-            .ToListAsync();
-    }
-
     private static Dictionary<string, string> BuildAllTags(BtcMapStoreSettings settings, bool isNewNode)
     {
         var tags = OsmApiClient.BuildBitcoinTags(settings.AcceptsOnchain, settings.AcceptsLightning);

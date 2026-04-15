@@ -70,9 +70,6 @@ public class Plugin : BaseBTCPayServerPlugin
             services.AddSingleton<IOverpassApiClient>(sp => sp.GetRequiredService<OverpassApiClient>());
         }
 
-        // Background services
-        services.AddHostedService<BtcMapReverificationService>();
-
         // Named HTTP clients
         services.AddHttpClient("OsmApi", client =>
         {
