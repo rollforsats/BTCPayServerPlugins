@@ -9,6 +9,8 @@ public class BtcMapListingViewModel
     public BtcMapStoreSettings Settings { get; set; } = new();
     public BtcMapListing ExistingListing { get; set; }
     public bool OsmConnected { get; set; }
+    public bool OsmClientIdConfigured { get; set; }
+    public bool IsServerAdmin { get; set; }
     public bool IsMainnet { get; set; }
     public string OsmDisplayName { get; set; }
     public List<OverpassElement> SearchResults { get; set; }

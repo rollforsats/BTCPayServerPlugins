@@ -38,14 +38,57 @@
                 <span class="badge bg-success">OSM Connected</span>
                 <span>as <strong>@Model.OsmDisplayName</strong></span>
                 <span class="text-muted">(@apiLabel API)</span>
+                @if (Model.IsServerAdmin)
+                {
+                    <form method="post" asp-action="DisconnectOsm" asp-route-storeId="@storeId" class="ms-auto">
+                        @Html.AntiForgeryToken()
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Disconnect</button>
+                    </form>
+                }
+            </div>
+        }
+        else if (!Model.OsmClientIdConfigured)
+        {
+            <div class="alert alert-warning mb-4">
+                OSM integration is not configured. The server administrator needs to set the
+                <code>BTCMAP_OSM_CLIENT_ID</code> environment variable.
+            </div>
+        }
+        else if (!Model.IsServerAdmin)
+        {
+            <div class="alert alert-warning mb-4">
+                OpenStreetMap is not connected. Ask a server administrator to connect an OSM account.
             </div>
         }
         else
         {
-            <div class="alert alert-warning mb-4">
-                OpenStreetMap is not connected. A server administrator must configure the
-                <a asp-controller="UIBtcMapServer" asp-action="Index">BTC Map server settings</a>
-                before merchants can be listed.
+            var learnMoreHtml =
+                "<p class='mb-2'><strong>Why do I need an OSM account?</strong></p>" +
+                "<p class='mb-2'>BTC Map reads merchant data from OpenStreetMap. To list your merchants there, " +
+                "the plugin writes Bitcoin acceptance tags to OSM on behalf of an OSM user — OSM policy requires edits " +
+                "to be attributed to a real person, not a shared service account.</p>" +
+                "<p class='mb-2'><strong>What gets attributed to my account?</strong></p>" +
+                "<p class='mb-2'>Every BTC Map listing created or updated from this BTCPay instance will appear " +
+                "on OSM under your username. Your OSM display name is visible publicly on OSM; your email is not.</p>" +
+                "<p class='mb-2'><strong>How long does this take?</strong></p>" +
+                "<p class='mb-0'>About 30 seconds. Click Connect, log in to OSM (or create a free account if you " +
+                "don't have one), click Authorize — done for the whole instance.</p>";
+
+            <div class="alert alert-info mb-4 d-flex align-items-center justify-content-between gap-3">
+                <span>
+                    Connect your OpenStreetMap account to enable BTC Map listings.
+                    This is a one-time setup for the whole BTCPay instance.
+                    <a href="#" role="button" tabindex="0"
+                       data-bs-toggle="popover" data-bs-trigger="focus click"
+                       data-bs-html="true" data-bs-placement="bottom"
+                       data-bs-title="About OpenStreetMap authorization"
+                       data-bs-content="@learnMoreHtml"
+                       class="text-decoration-underline">Learn more</a>
+                </span>
+                <form method="post" asp-action="ConnectOsm" asp-route-storeId="@storeId">
+                    @Html.AntiForgeryToken()
+                    <button type="submit" class="btn btn-primary text-nowrap">Connect OSM Account</button>
+                </form>
             </div>
         }
 
@@ -349,6 +392,23 @@
 </div>
 
 <script>
+    // Initialize Bootstrap popovers (BTCPay's site.js auto-inits tooltips but not
+    // popovers — any popover in a plugin view has to opt in here).
+    document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function (el) {
+        // Use jQuery if available (BTCPay loads it); fall back to bootstrap global
+        // if the view is ever rendered outside the main layout.
+        if (window.jQuery && window.jQuery.fn && window.jQuery.fn.popover) {
+            window.jQuery(el).popover();
+        } else if (window.bootstrap && window.bootstrap.Popover) {
+            new window.bootstrap.Popover(el);
+        }
+    });
+
+    // Prevent "Learn more" <a href="#"> from jumping to top on click.
+    document.querySelectorAll('a[data-bs-toggle="popover"]').forEach(function (el) {
+        el.addEventListener('click', function (e) { e.preventDefault(); });
+    });
+
     // Geocode button
     document.getElementById('geocodeBtn')?.addEventListener('click', async function() {
         const form = this.closest('form');

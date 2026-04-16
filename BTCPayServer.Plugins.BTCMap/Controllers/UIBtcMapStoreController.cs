@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using BTCPayServer.Abstractions.Constants;
 using BTCPayServer.Abstractions.Extensions;
@@ -49,9 +50,14 @@ public class UIBtcMapStoreController : Controller
         var listing = await _btcMapService.GetListingForStore(storeId);
         var storeData = HttpContext.GetStoreData();
 
+        var isServerAdmin = (await _authorizationService.AuthorizeAsync(
+            User, Policies.CanModifyServerSettings)).Succeeded;
+
         var vm = new BtcMapListingViewModel
         {
             OsmConnected = !string.IsNullOrEmpty(osmSettings.OsmAccessToken),
+            OsmClientIdConfigured = _osmAuthService.IsClientIdConfigured,
+            IsServerAdmin = isServerAdmin,
             IsMainnet = _osmAuthService.IsMainnet,
             OsmDisplayName = osmSettings.OsmDisplayName,
             ExistingListing = listing,
@@ -393,6 +399,56 @@ public class UIBtcMapStoreController : Controller
     {
         await _directoryService.ClearSubmission(storeId);
         TempData["StatusMessage"] = "Directory submission reset. You can submit again.";
+        return RedirectToAction(nameof(Index), new { storeId });
+    }
+
+    // Server-admin-only. The Connect/Disconnect actions manage a server-wide OSM
+    // token, but we expose them from the store page so the admin doesn't need to
+    // hop to a separate server-settings page.
+    [HttpPost("connect-osm")]
+    [Authorize(AuthenticationSchemes = AuthenticationSchemes.Cookie, Policy = Policies.CanModifyServerSettings)]
+    public async Task<IActionResult> ConnectOsm(string storeId)
+    {
+        if (!_osmAuthService.IsClientIdConfigured)
+        {
+            TempData["StatusMessage"] = $"Error: OSM integration is not configured. Set the {OsmAuthService.ClientIdEnvVar} environment variable.";
+            return RedirectToAction(nameof(Index), new { storeId });
+        }
+
+        var codeVerifier = OsmAuthService.GenerateCodeVerifier();
+        var codeChallenge = OsmAuthService.GenerateCodeChallenge(codeVerifier);
+
+        // Local callback URL on this BTCPay instance — used directly in dev, or
+        // encoded as the state on mainnet so the bounce page knows where to
+        // redirect the auth code after OSM returns it.
+        var localCallbackUrl = Url.Action("Callback", "UIBtcMapOAuth", null, Request.Scheme);
+        var redirectUri = _osmAuthService.GetRedirectUri(localCallbackUrl);
+
+        // state = base64 of this instance's origin URL. On mainnet, the bounce
+        // page decodes this to know where to redirect the auth code back.
+        var origin = Request.GetAbsoluteRoot();
+        var state = Convert.ToBase64String(Encoding.UTF8.GetBytes(origin));
+
+        var osmSettings = await _osmAuthService.GetSettings();
+        osmSettings.PendingCodeVerifier = codeVerifier;
+        osmSettings.PendingRedirectUri = redirectUri;
+        osmSettings.PendingStoreId = storeId;
+        await _osmAuthService.SaveSettings(osmSettings);
+
+        var authUrl = _osmAuthService.GetAuthorizationUrl(redirectUri, state, codeChallenge);
+        return Redirect(authUrl);
+    }
+
+    [HttpPost("disconnect-osm")]
+    [Authorize(AuthenticationSchemes = AuthenticationSchemes.Cookie, Policy = Policies.CanModifyServerSettings)]
+    public async Task<IActionResult> DisconnectOsm(string storeId)
+    {
+        var osmSettings = await _osmAuthService.GetSettings();
+        osmSettings.OsmAccessToken = null;
+        osmSettings.OsmDisplayName = null;
+        await _osmAuthService.SaveSettings(osmSettings);
+
+        TempData["StatusMessage"] = "OSM account disconnected.";
         return RedirectToAction(nameof(Index), new { storeId });
     }
 
