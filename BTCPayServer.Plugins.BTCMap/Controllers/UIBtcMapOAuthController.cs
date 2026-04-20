@@ -13,8 +13,8 @@ namespace BTCPayServer.Plugins.BTCMap.Controllers;
 
 // Fixed callback route for the OSM OAuth flow. Not store-scoped because OSM's
 // registered redirect URI must be a fixed exact-match string. The originating
-// store is retrieved from PendingStoreId in server settings, which was written
-// by UIBtcMapStoreController.ConnectOsm before the authorize redirect.
+// store is resolved by looking up the nonce-keyed PendingFlows entry (written
+// by UIBtcMapStoreController.ConnectOsm before the authorize redirect).
 [Route("~/plugins/btcmap/oauth")]
 [Authorize(AuthenticationSchemes = AuthenticationSchemes.Cookie, Policy = Policies.CanModifyServerSettings)]
 public class UIBtcMapOAuthController : Controller
@@ -68,7 +68,6 @@ public class UIBtcMapOAuthController : Controller
         if (string.IsNullOrEmpty(nonce) || !settings.PendingFlows.TryGetValue(nonce, out var flow))
         {
             TempData["StatusMessage"] = "Error: Invalid or expired OAuth state. Please try connecting again.";
-            await _osmAuthService.SaveSettings(settings);
             return RedirectToStoreOrFallback(null);
         }
 
