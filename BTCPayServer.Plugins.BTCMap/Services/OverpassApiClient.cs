@@ -32,7 +32,7 @@ public class OverpassApiClient : IOverpassApiClient
 
     public async Task<List<OverpassElement>> SearchNearby(double lat, double lon, int radiusMeters, string name)
     {
-        var escapedName = Regex.Escape(name).Replace("\\", "\\\\").Replace("\"", "\\\"");
+        var escapedName = Regex.Escape(name).Replace("\"", "\\\"");
         var latStr = lat.ToString(CultureInfo.InvariantCulture);
         var lonStr = lon.ToString(CultureInfo.InvariantCulture);
 
@@ -47,8 +47,8 @@ public class OverpassApiClient : IOverpassApiClient
 
     public async Task<List<OverpassElement>> SearchByAddress(double lat, double lon, int radiusMeters, string street, string city)
     {
-        var escapedStreet = Regex.Escape(street).Replace("\\", "\\\\").Replace("\"", "\\\"");
-        var escapedCity = Regex.Escape(city).Replace("\\", "\\\\").Replace("\"", "\\\"");
+        var escapedStreet = Regex.Escape(street).Replace("\"", "\\\"");
+        var escapedCity = Regex.Escape(city).Replace("\"", "\\\"");
         var latStr = lat.ToString(CultureInfo.InvariantCulture);
         var lonStr = lon.ToString(CultureInfo.InvariantCulture);
 

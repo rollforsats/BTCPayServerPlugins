@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
 namespace BTCPayServer.Plugins.BTCMap.Services;
@@ -13,6 +14,7 @@ public class DirectoryService
 {
     private readonly BtcMapDbContextFactory _dbContextFactory;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IMemoryCache _cache;
     private readonly ILogger<DirectoryService> _logger;
 
     private const string MerchantsJsonUrl =
@@ -21,13 +23,18 @@ public class DirectoryService
     private const string GitHubIssueBaseUrl =
         "https://github.com/btcpayserver/directory.btcpayserver.org/issues/new";
 
+    private const string MerchantsCacheKey = "DirectoryService:MerchantsJson";
+    private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
+
     public DirectoryService(
         BtcMapDbContextFactory dbContextFactory,
         IHttpClientFactory httpClientFactory,
+        IMemoryCache cache,
         ILogger<DirectoryService> logger)
     {
         _dbContextFactory = dbContextFactory;
         _httpClientFactory = httpClientFactory;
+        _cache = cache;
         _logger = logger;
     }
 
@@ -69,14 +76,19 @@ public class DirectoryService
 
         try
         {
-            var client = _httpClientFactory.CreateClient("DirectoryApi");
-            var response = await client.GetAsync(MerchantsJsonUrl);
-            if (!response.IsSuccessStatusCode)
-                return null;
+            var entries = await _cache.GetOrCreateAsync(MerchantsCacheKey, async entry =>
+            {
+                entry.AbsoluteExpirationRelativeToNow = CacheDuration;
 
-            var json = await response.Content.ReadAsStringAsync();
-            var entries = JsonSerializer.Deserialize<List<DirectoryEntry>>(json,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                var client = _httpClientFactory.CreateClient("DirectoryApi");
+                var response = await client.GetAsync(MerchantsJsonUrl);
+                if (!response.IsSuccessStatusCode)
+                    return null;
+
+                var json = await response.Content.ReadAsStringAsync();
+                return JsonSerializer.Deserialize<List<DirectoryEntry>>(json,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            });
 
             if (entries == null)
                 return null;
