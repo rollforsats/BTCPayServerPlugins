@@ -182,6 +182,14 @@ public class OsmAuthService
         }
     }
 
+    public static string GenerateStateNonce()
+    {
+        var bytes = new byte[32];
+        using var rng = RandomNumberGenerator.Create();
+        rng.GetBytes(bytes);
+        return Base64UrlEncode(bytes);
+    }
+
     // PKCE helpers (RFC 7636).
 
     public static string GenerateCodeVerifier()

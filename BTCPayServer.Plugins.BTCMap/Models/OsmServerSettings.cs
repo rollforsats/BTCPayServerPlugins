@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+
 namespace BTCPayServer.Plugins.BTCMap.Models;
 
 public class OsmServerSettings
@@ -5,10 +8,15 @@ public class OsmServerSettings
     public string OsmAccessToken { get; set; }
     public string OsmDisplayName { get; set; }
 
-    // PKCE in-flight state. Set when ConnectOsm kicks off the OAuth flow, cleared
-    // after the token exchange completes (or fails). These are only populated
-    // between the authorize redirect and the callback.
-    public string PendingCodeVerifier { get; set; }
-    public string PendingRedirectUri { get; set; }
-    public string PendingStoreId { get; set; }
+    // Keyed by server-generated nonce. Each OAuth flow gets its own entry so
+    // concurrent browser tabs or multiple admins don't clobber each other.
+    public Dictionary<string, PendingOAuthFlow> PendingFlows { get; set; } = new();
+}
+
+public class PendingOAuthFlow
+{
+    public string CodeVerifier { get; set; }
+    public string RedirectUri { get; set; }
+    public string StoreId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
 }

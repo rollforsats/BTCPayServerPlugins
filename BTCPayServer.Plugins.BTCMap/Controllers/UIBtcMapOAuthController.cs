@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using BTCPayServer.Abstractions.Constants;
 using BTCPayServer.Client;
@@ -27,40 +28,65 @@ public class UIBtcMapOAuthController : Controller
     }
 
     [HttpGet("callback")]
-    public async Task<IActionResult> Callback(string code)
+    public async Task<IActionResult> Callback(
+        string code,
+        string error,
+        [FromQuery(Name = "error_description")] string errorDescription)
     {
         var settings = await _osmAuthService.GetSettings();
 
-        if (string.IsNullOrEmpty(settings.PendingCodeVerifier) ||
-            string.IsNullOrEmpty(settings.PendingRedirectUri))
+        // Find the most recent pending flow. The bounce page doesn't forward
+        // the state param, so we can't look up by nonce — but there's typically
+        // only one pending flow (concurrent flows are rare).
+        var cutoff = DateTimeOffset.UtcNow.AddMinutes(-15);
+        var staleKeys = settings.PendingFlows
+            .Where(kv => kv.Value.CreatedAt < cutoff)
+            .Select(kv => kv.Key).ToList();
+        foreach (var key in staleKeys)
+            settings.PendingFlows.Remove(key);
+
+        var entry = settings.PendingFlows
+            .OrderByDescending(kv => kv.Value.CreatedAt)
+            .FirstOrDefault();
+
+        if (entry.Value == null)
         {
             TempData["StatusMessage"] = "Error: No pending OSM connection. Please try connecting again.";
-            return RedirectToStoreOrFallback(settings.PendingStoreId);
+            return RedirectToStoreOrFallback(null);
+        }
+
+        var nonce = entry.Key;
+        var flow = entry.Value;
+        var storeId = flow.StoreId;
+
+        // Consume this flow entry — it cannot be reused regardless of outcome.
+        settings.PendingFlows.Remove(nonce);
+
+        if (!string.IsNullOrEmpty(error))
+        {
+            await _osmAuthService.SaveSettings(settings);
+            var message = !string.IsNullOrEmpty(errorDescription)
+                ? $"Error: OpenStreetMap authorization failed: {errorDescription}"
+                : $"Error: OpenStreetMap authorization failed ({error}).";
+            TempData["StatusMessage"] = message;
+            return RedirectToStoreOrFallback(storeId);
         }
 
         if (string.IsNullOrEmpty(code))
         {
-            settings.PendingCodeVerifier = null;
-            settings.PendingRedirectUri = null;
-            settings.PendingStoreId = null;
             await _osmAuthService.SaveSettings(settings);
             TempData["StatusMessage"] = "Error: OpenStreetMap did not return an authorization code.";
-            return RedirectToStoreOrFallback(settings.PendingStoreId);
+            return RedirectToStoreOrFallback(storeId);
         }
-
-        var storeId = settings.PendingStoreId;
 
         try
         {
             var accessToken = await _osmAuthService.ExchangeCodeForToken(
-                code, settings.PendingRedirectUri, settings.PendingCodeVerifier);
+                code, flow.RedirectUri, flow.CodeVerifier);
             var displayName = await _osmAuthService.GetDisplayName(accessToken);
 
             settings.OsmAccessToken = accessToken;
             settings.OsmDisplayName = displayName;
-            settings.PendingCodeVerifier = null;
-            settings.PendingRedirectUri = null;
-            settings.PendingStoreId = null;
             await _osmAuthService.SaveSettings(settings);
 
             TempData["StatusMessage"] = $"Successfully connected as {displayName}.";
@@ -68,13 +94,7 @@ public class UIBtcMapOAuthController : Controller
         catch (Exception ex)
         {
             _logger.LogError(ex, "OSM OAuth token exchange failed");
-
-            // Clear pending state on failure so the user can retry cleanly.
-            settings.PendingCodeVerifier = null;
-            settings.PendingRedirectUri = null;
-            settings.PendingStoreId = null;
             await _osmAuthService.SaveSettings(settings);
-
             TempData["StatusMessage"] = "Error: OAuth authentication failed. Please try again or check the server logs.";
         }
 

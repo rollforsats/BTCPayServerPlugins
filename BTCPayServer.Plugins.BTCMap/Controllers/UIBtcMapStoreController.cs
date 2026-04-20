@@ -389,6 +389,9 @@ public class UIBtcMapStoreController : Controller
             country,
             model.DirectoryDescription);
 
+        // Records submission before the GitHub issue popup opens. If the popup
+        // is blocked or abandoned, the UI still shows "submitted" — the merchant
+        // can use "Submit Again" (DirectoryReset) to retry.
         await _directoryService.RecordSubmission(storeId, model.DirectoryUrl);
 
         return Json(new { success = true, issueUrl });
@@ -429,10 +432,23 @@ public class UIBtcMapStoreController : Controller
         var origin = Request.GetAbsoluteRoot();
         var state = Convert.ToBase64String(Encoding.UTF8.GetBytes(origin));
 
+        var nonce = OsmAuthService.GenerateStateNonce();
         var osmSettings = await _osmAuthService.GetSettings();
-        osmSettings.PendingCodeVerifier = codeVerifier;
-        osmSettings.PendingRedirectUri = redirectUri;
-        osmSettings.PendingStoreId = storeId;
+
+        // Prune stale flows (abandoned tabs, etc.)
+        var cutoff = DateTimeOffset.UtcNow.AddMinutes(-15);
+        foreach (var key in osmSettings.PendingFlows
+                     .Where(kv => kv.Value.CreatedAt < cutoff)
+                     .Select(kv => kv.Key).ToList())
+            osmSettings.PendingFlows.Remove(key);
+
+        osmSettings.PendingFlows[nonce] = new PendingOAuthFlow
+        {
+            CodeVerifier = codeVerifier,
+            RedirectUri = redirectUri,
+            StoreId = storeId,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
         await _osmAuthService.SaveSettings(osmSettings);
 
         var authUrl = _osmAuthService.GetAuthorizationUrl(redirectUri, state, codeChallenge);
@@ -446,6 +462,7 @@ public class UIBtcMapStoreController : Controller
         var osmSettings = await _osmAuthService.GetSettings();
         osmSettings.OsmAccessToken = null;
         osmSettings.OsmDisplayName = null;
+        osmSettings.PendingFlows.Clear();
         await _osmAuthService.SaveSettings(osmSettings);
 
         TempData["StatusMessage"] = "OSM account disconnected.";
