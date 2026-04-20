@@ -1,0 +1,7 @@
+@using BTCPayServer.Client
+@model BTCPayServer.Components.MainNav.MainNavViewModel
+
+<li class="nav-item nav-item-sub" permission="@Policies.CanModifyServerSettings">
+    <a asp-controller="UIBtcMapServer" asp-action="Index"
+       layout-menu-item="BtcMapServer">BTC Map</a>
+</li>

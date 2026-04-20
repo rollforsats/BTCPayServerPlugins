@@ -1,0 +1,131 @@
+using System;
+using System.Threading.Tasks;
+using BTCPayServer.Abstractions.Constants;
+using BTCPayServer.Client;
+using BTCPayServer.Plugins.BTCMap.Models;
+using BTCPayServer.Plugins.BTCMap.Services;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
+
+namespace BTCPayServer.Plugins.BTCMap.Controllers;
+
+[Route("~/plugins/btcmap/server")]
+[Authorize(AuthenticationSchemes = AuthenticationSchemes.Cookie, Policy = Policies.CanModifyServerSettings)]
+public class UIBtcMapServerController : Controller
+{
+    private readonly OsmAuthService _osmAuthService;
+    private readonly ILogger<UIBtcMapServerController> _logger;
+
+    public UIBtcMapServerController(OsmAuthService osmAuthService, ILogger<UIBtcMapServerController> logger)
+    {
+        _osmAuthService = osmAuthService;
+        _logger = logger;
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Index()
+    {
+        var settings = await _osmAuthService.GetSettings();
+        return View(new ServerSettingsViewModel
+        {
+            OsmClientId = settings.OsmClientId,
+            OsmClientSecret = settings.OsmClientSecret,
+            IsConnected = !string.IsNullOrEmpty(settings.OsmAccessToken),
+            OsmDisplayName = settings.OsmDisplayName,
+            IsMainnet = _osmAuthService.IsMainnet,
+            StatusMessage = TempData["StatusMessage"]?.ToString()
+        });
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> Index(string osmClientId, string osmClientSecret)
+    {
+        var settings = await _osmAuthService.GetSettings();
+        var newClientId = osmClientId?.Trim();
+        var newClientSecret = osmClientSecret?.Trim();
+
+        var credentialsChanged =
+            !string.Equals(newClientId, settings.OsmClientId, StringComparison.Ordinal) ||
+            (!string.IsNullOrEmpty(newClientSecret) &&
+             !string.Equals(newClientSecret, settings.OsmClientSecret, StringComparison.Ordinal));
+
+        settings.OsmClientId = newClientId;
+        if (!string.IsNullOrEmpty(newClientSecret))
+            settings.OsmClientSecret = newClientSecret;
+
+        if (credentialsChanged)
+        {
+            settings.OsmAccessToken = null;
+            settings.OsmDisplayName = null;
+        }
+
+        await _osmAuthService.SaveSettings(settings);
+
+        TempData["StatusMessage"] = "OSM settings saved.";
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpGet("connect")]
+    public async Task<IActionResult> ConnectOsm()
+    {
+        var settings = await _osmAuthService.GetSettings();
+        if (string.IsNullOrEmpty(settings.OsmClientId) || string.IsNullOrEmpty(settings.OsmClientSecret))
+        {
+            TempData["StatusMessage"] = "Error: Please save OAuth Client ID and Secret first.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var state = Guid.NewGuid().ToString("N");
+        TempData["OAuthState"] = state;
+
+        var redirectUri = Url.Action(nameof(OAuthCallback), "UIBtcMapServer", null, Request.Scheme);
+        var authUrl = _osmAuthService.GetAuthorizationUrl(settings, redirectUri, state);
+        return Redirect(authUrl);
+    }
+
+    [HttpGet("oauth/callback")]
+    public async Task<IActionResult> OAuthCallback(string code, string state)
+    {
+        var expectedState = TempData["OAuthState"]?.ToString();
+
+        if (string.IsNullOrEmpty(expectedState) || expectedState != state)
+        {
+            TempData["StatusMessage"] = "Error: Invalid OAuth state. Please try again.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        try
+        {
+            var settings = await _osmAuthService.GetSettings();
+            var redirectUri = Url.Action(nameof(OAuthCallback), "UIBtcMapServer", null, Request.Scheme);
+            var accessToken = await _osmAuthService.ExchangeCodeForToken(settings, code, redirectUri);
+            var displayName = await _osmAuthService.GetDisplayName(settings, accessToken);
+
+            settings.OsmAccessToken = accessToken;
+            settings.OsmDisplayName = displayName;
+            await _osmAuthService.SaveSettings(settings);
+
+            TempData["StatusMessage"] = $"Successfully connected as {displayName}.";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "OSM OAuth authentication failed");
+            TempData["StatusMessage"] = "Error: OAuth authentication failed. Please try again or contact the administrator.";
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost("disconnect")]
+    public async Task<IActionResult> DisconnectOsm()
+    {
+        var settings = await _osmAuthService.GetSettings();
+        settings.OsmAccessToken = null;
+        settings.OsmDisplayName = null;
+        await _osmAuthService.SaveSettings(settings);
+
+        TempData["StatusMessage"] = "OSM account disconnected.";
+        return RedirectToAction(nameof(Index));
+    }
+}

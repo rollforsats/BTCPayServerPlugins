@@ -1,0 +1,97 @@
+@using BTCPayServer.Abstractions.Extensions
+@using BTCPayServer.Abstractions.Models
+@using BTCPayServer.Plugins.BTCMap.Models
+@model ServerSettingsViewModel
+
+@{
+    ViewData.SetLayoutModel(new LayoutModel("BtcMapServer", "BTC Map")
+        .SetCategory(WellKnownCategories.Server));
+    var apiLabel = Model.IsMainnet ? "Production" : "Development";
+    var registerUrl = Model.IsMainnet
+        ? "https://www.openstreetmap.org/oauth2/applications/new"
+        : "https://master.apis.dev.openstreetmap.org/oauth2/applications/new";
+}
+
+<div class="row">
+    <div class="col-xxl-constrain col-xl-8">
+        @if (!string.IsNullOrEmpty(Model.StatusMessage))
+        {
+            var isError = Model.StatusMessage.StartsWith("Error", StringComparison.OrdinalIgnoreCase);
+            <div class="alert @(isError ? "alert-danger" : "alert-success") alert-dismissible" role="alert">
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                @Model.StatusMessage
+            </div>
+        }
+
+        <h3 class="mb-3">BTC Map Integration</h3>
+        <p class="text-secondary">
+            List your merchants on <a href="https://btcmap.org" target="_blank" rel="noopener noreferrer">BTC Map</a> automatically.
+            BTC Map shows Bitcoin-accepting businesses worldwide by reading OpenStreetMap data.
+        </p>
+
+        <div class="alert alert-info mb-4">
+            Using <strong>OSM @apiLabel API</strong>@(Model.IsMainnet ? "" : " (non-mainnet network detected)")
+        </div>
+
+        <form method="post" asp-action="Index">
+            <div class="form-group mb-3">
+                <label asp-for="OsmClientId" class="form-label">OSM OAuth Client ID</label>
+                <input asp-for="OsmClientId" class="form-control" placeholder="Your OAuth 2.0 Client ID" />
+                <div class="form-text">
+                    Register an OAuth application at
+                    <a href="@registerUrl" target="_blank" rel="noopener noreferrer">@(Model.IsMainnet ? "openstreetmap.org" : "OSM dev server")</a>.
+                    Set the redirect URI to: <code>@(Url.Action("OAuthCallback", "UIBtcMapServer", null, Context.Request.Scheme))</code>
+                </div>
+            </div>
+            <div class="form-group mb-3">
+                <label asp-for="OsmClientSecret" class="form-label">OSM OAuth Client Secret</label>
+                @if (!string.IsNullOrEmpty(Model.OsmClientSecret))
+                {
+                    <div class="input-group">
+                        <input asp-for="OsmClientSecret" class="form-control" type="password" placeholder="Leave blank to keep current" value="" />
+                        <span class="input-group-text text-success">Saved</span>
+                    </div>
+                }
+                else
+                {
+                    <input asp-for="OsmClientSecret" class="form-control" type="password" />
+                }
+            </div>
+
+            <div class="alert alert-secondary mb-3">
+                <strong>Required OAuth permissions:</strong>
+                <ul class="mb-0 mt-1">
+                    <li><strong>Modify the map</strong> — write Bitcoin acceptance tags</li>
+                    <li><strong>Read user preferences</strong> — display connected account name</li>
+                </ul>
+                <small class="text-muted">If you update permissions on your OAuth app, disconnect and reconnect your account for changes to take effect.</small>
+            </div>
+
+            <button type="submit" class="btn btn-primary">Save Settings</button>
+        </form>
+
+        <hr class="my-4" />
+
+        <h4>OSM Connection</h4>
+
+        @if (Model.IsConnected)
+        {
+            <div class="d-flex align-items-center gap-3 mb-3">
+                <span class="badge bg-success">Connected</span>
+                <span>Signed in as <strong>@Model.OsmDisplayName</strong></span>
+            </div>
+            <form method="post" asp-action="DisconnectOsm">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="btn btn-outline-danger">Disconnect OSM Account</button>
+            </form>
+        }
+        else
+        {
+            <p class="text-secondary">Connect an OpenStreetMap account to enable writing Bitcoin acceptance data.</p>
+            @if (!string.IsNullOrEmpty(Model.OsmClientId) && !string.IsNullOrEmpty(Model.OsmClientSecret))
+            {
+                <a asp-action="ConnectOsm" class="btn btn-secondary">Connect OSM Account</a>
+            }
+        }
+    </div>
+</div>
