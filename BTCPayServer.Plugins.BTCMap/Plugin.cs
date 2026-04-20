@@ -20,7 +20,6 @@ public class Plugin : BaseBTCPayServerPlugin
     {
         // UI extensions
         services.AddUIExtension("store-integrations-nav", "BtcMapStoreNav");
-        services.AddUIExtension("server-nav", "BtcMapServerNav");
 
         // Database
         services.AddHostedService<PluginMigrationRunner>();
