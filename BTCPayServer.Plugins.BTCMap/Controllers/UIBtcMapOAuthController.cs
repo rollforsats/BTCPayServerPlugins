@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using BTCPayServer.Abstractions.Constants;
 using BTCPayServer.Client;
@@ -30,14 +31,14 @@ public class UIBtcMapOAuthController : Controller
     [HttpGet("callback")]
     public async Task<IActionResult> Callback(
         string code,
+        string state,
+        [FromQuery(Name = "state_nonce")] string stateNonce,
         string error,
         [FromQuery(Name = "error_description")] string errorDescription)
     {
         var settings = await _osmAuthService.GetSettings();
 
-        // Find the most recent pending flow. The bounce page doesn't forward
-        // the state param, so we can't look up by nonce — but there's typically
-        // only one pending flow (concurrent flows are rare).
+        // Prune stale flows (>15 min).
         var cutoff = DateTimeOffset.UtcNow.AddMinutes(-15);
         var staleKeys = settings.PendingFlows
             .Where(kv => kv.Value.CreatedAt < cutoff)
@@ -45,18 +46,32 @@ public class UIBtcMapOAuthController : Controller
         foreach (var key in staleKeys)
             settings.PendingFlows.Remove(key);
 
-        var entry = settings.PendingFlows
-            .OrderByDescending(kv => kv.Value.CreatedAt)
-            .FirstOrDefault();
-
-        if (entry.Value == null)
+        // Extract the nonce. On mainnet the bounce page forwards it as
+        // state_nonce; on dev OSM sends the full state param directly.
+        var nonce = stateNonce;
+        if (string.IsNullOrEmpty(nonce) && !string.IsNullOrEmpty(state))
         {
-            TempData["StatusMessage"] = "Error: No pending OSM connection. Please try connecting again.";
+            try
+            {
+                var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(state));
+                var pipeIdx = decoded.LastIndexOf('|');
+                if (pipeIdx >= 0)
+                    nonce = decoded[(pipeIdx + 1)..];
+            }
+            catch (FormatException)
+            {
+                // Malformed base64 — fall through to nonce validation below.
+            }
+        }
+
+        // Validate the nonce against pending flows.
+        if (string.IsNullOrEmpty(nonce) || !settings.PendingFlows.TryGetValue(nonce, out var flow))
+        {
+            TempData["StatusMessage"] = "Error: Invalid or expired OAuth state. Please try connecting again.";
+            await _osmAuthService.SaveSettings(settings);
             return RedirectToStoreOrFallback(null);
         }
 
-        var nonce = entry.Key;
-        var flow = entry.Value;
         var storeId = flow.StoreId;
 
         // Consume this flow entry — it cannot be reused regardless of outcome.

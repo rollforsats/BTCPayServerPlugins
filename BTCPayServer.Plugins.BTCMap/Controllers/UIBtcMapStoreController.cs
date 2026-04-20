@@ -427,12 +427,14 @@ public class UIBtcMapStoreController : Controller
         var localCallbackUrl = Url.Action("Callback", "UIBtcMapOAuth", null, Request.Scheme);
         var redirectUri = _osmAuthService.GetRedirectUri(localCallbackUrl);
 
-        // state = base64 of this instance's origin URL. On mainnet, the bounce
-        // page decodes this to know where to redirect the auth code back.
-        var origin = Request.GetAbsoluteRoot();
-        var state = Convert.ToBase64String(Encoding.UTF8.GetBytes(origin));
-
         var nonce = OsmAuthService.GenerateStateNonce();
+
+        // state = base64(origin + "|" + nonce). The bounce page splits on the
+        // last "|" to extract the origin for routing and the nonce for forwarding
+        // to the BTCPay callback. On dev (direct redirect), OSM sends state back
+        // as-is and the callback decodes it to extract the nonce.
+        var origin = Request.GetAbsoluteRoot();
+        var state = Convert.ToBase64String(Encoding.UTF8.GetBytes(origin + "|" + nonce));
         var osmSettings = await _osmAuthService.GetSettings();
 
         // Prune stale flows (abandoned tabs, etc.)
