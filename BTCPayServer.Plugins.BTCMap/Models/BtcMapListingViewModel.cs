@@ -8,17 +8,14 @@ public class BtcMapListingViewModel
 {
     public BtcMapStoreSettings Settings { get; set; } = new();
     public BtcMapListing ExistingListing { get; set; }
-    public bool OsmConnected { get; set; }
-    public bool OsmClientIdConfigured { get; set; }
-    public bool IsServerAdmin { get; set; }
     public bool IsMainnet { get; set; }
-    public string OsmDisplayName { get; set; }
     public List<OverpassElement> SearchResults { get; set; }
     public string StatusMessage { get; set; }
     public string Address { get; set; }
     public DateTimeOffset? DirectorySubmittedAt { get; set; }
-    public string DirectoryExistingUrl { get; set; }
-    public string DirectoryExistingName { get; set; }
-    public string DirectoryExistingType { get; set; }
+    public string DirectoryPrUrl { get; set; }
+    public string DirectoryMergedName { get; set; }
+    public string DirectoryMergedType { get; set; }
+    public string DirectoryMergedUrl { get; set; }
     public int? DaysUntilVerificationExpires { get; set; }
 }

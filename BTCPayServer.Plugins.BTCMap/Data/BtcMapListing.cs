@@ -20,13 +20,20 @@ public class BtcMapListing
     public string City { get; set; }
     public string PostCode { get; set; }
     public string Country { get; set; }
-    public bool AcceptsOnchain { get; set; }
     public bool AcceptsLightning { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset LastVerifiedAt { get; set; }
     public ListingStatus Status { get; set; }
     public DateTimeOffset? DirectorySubmittedAt { get; set; }
     public string DirectorySubmittedUrl { get; set; }
+    public string DirectoryPrUrl { get; set; }
+    public string Url { get; set; }
+    public string Description { get; set; }
+    public string Twitter { get; set; }
+    public string Github { get; set; }
+    public string OnionUrl { get; set; }
+    public string DirectoryType { get; set; }
+    public string DirectorySubType { get; set; }
 }
 
 public enum ListingStatus

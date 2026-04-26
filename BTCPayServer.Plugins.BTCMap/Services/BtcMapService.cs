@@ -12,22 +12,19 @@ namespace BTCPayServer.Plugins.BTCMap.Services;
 public class BtcMapService
 {
     private readonly BtcMapDbContextFactory _dbContextFactory;
-    private readonly OsmApiClient _osmApiClient;
+    private readonly PluginBuilderApiClient _apiClient;
     private readonly IOverpassApiClient _overpassApiClient;
-    private readonly OsmAuthService _osmAuthService;
     private readonly ILogger<BtcMapService> _logger;
 
     public BtcMapService(
         BtcMapDbContextFactory dbContextFactory,
-        OsmApiClient osmApiClient,
+        PluginBuilderApiClient apiClient,
         IOverpassApiClient overpassApiClient,
-        OsmAuthService osmAuthService,
         ILogger<BtcMapService> logger)
     {
         _dbContextFactory = dbContextFactory;
-        _osmApiClient = osmApiClient;
+        _apiClient = apiClient;
         _overpassApiClient = overpassApiClient;
-        _osmAuthService = osmAuthService;
         _logger = logger;
     }
 
@@ -60,13 +57,41 @@ public class BtcMapService
         return await _overpassApiClient.CheckExistingBitcoinTags(lat, lon);
     }
 
-    public async Task<BtcMapListing> CreateNewListing(string storeId, BtcMapStoreSettings settings)
+    /// <summary>
+    /// Submit a new listing via the plugin-builder API. Handles both tagging existing
+    /// elements and creating new nodes, depending on whether osmNodeId is provided.
+    /// </summary>
+    public async Task<BtcMapListing> SubmitListing(string storeId, BtcMapStoreSettings settings,
+        bool acceptsLightning, bool submitToDirectory,
+        string osmType = null, long? osmId = null)
     {
+        var request = new BtcMapSubmitRequest
+        {
+            Name = settings.BusinessName,
+            Url = settings.Url,
+            Description = submitToDirectory ? settings.DirectoryDescription : null,
+            Type = submitToDirectory ? settings.DirectoryType : null,
+            SubType = submitToDirectory ? settings.DirectorySubType : null,
+            Country = settings.Country,
+            Twitter = submitToDirectory ? settings.DirectoryTwitter : null,
+            Github = submitToDirectory ? settings.DirectoryGithub : null,
+            OnionUrl = submitToDirectory ? settings.DirectoryOnionUrl : null,
+            OsmNodeId = osmId,
+            OsmNodeType = osmType,
+            Latitude = osmId == null ? settings.Latitude : null,
+            Longitude = osmId == null ? settings.Longitude : null,
+            OsmCategory = osmId == null ? settings.Category : null,
+            SubmitToDirectory = submitToDirectory,
+            TagOnOsm = true,
+            AcceptsLightning = acceptsLightning
+        };
+
         var listing = new BtcMapListing
         {
             Id = Guid.NewGuid().ToString(),
             StoreId = storeId,
-            OsmElementType = "node",
+            OsmElementType = osmType ?? "node",
+            OsmElementId = osmId ?? 0,
             BusinessName = settings.BusinessName,
             Category = settings.Category,
             Latitude = settings.Latitude.Value,
@@ -75,11 +100,17 @@ public class BtcMapService
             City = settings.City,
             PostCode = settings.PostCode,
             Country = settings.Country,
-            AcceptsOnchain = settings.AcceptsOnchain,
-            AcceptsLightning = settings.AcceptsLightning,
+            AcceptsLightning = acceptsLightning,
             CreatedAt = DateTimeOffset.UtcNow,
             LastVerifiedAt = DateTimeOffset.UtcNow,
-            Status = ListingStatus.Pending
+            Status = ListingStatus.Pending,
+            Url = settings.Url,
+            Description = submitToDirectory ? settings.DirectoryDescription : null,
+            Twitter = submitToDirectory ? settings.DirectoryTwitter : null,
+            Github = submitToDirectory ? settings.DirectoryGithub : null,
+            OnionUrl = submitToDirectory ? settings.DirectoryOnionUrl : null,
+            DirectoryType = submitToDirectory ? settings.DirectoryType : null,
+            DirectorySubType = submitToDirectory ? settings.DirectorySubType : null
         };
 
         await using var ctx = _dbContextFactory.CreateContext();
@@ -91,36 +122,59 @@ public class BtcMapService
 
         try
         {
-            var osmSettings = await _osmAuthService.GetSettings();
-            var tags = BuildAllTags(settings, isNewNode: true);
-            var comment = $"Add Bitcoin payment tags for {settings.BusinessName} #btcmap";
-            var changesetId = await _osmApiClient.CreateChangeset(osmSettings, comment);
-            try
-            {
-                var nodeId = await _osmApiClient.CreateNode(osmSettings, changesetId,
-                    settings.Latitude.Value, settings.Longitude.Value, tags);
+            var response = await _apiClient.SubmitAsync(request);
 
-                listing.OsmElementId = nodeId;
-                listing.OsmElementVersion = 1;
-                listing.Status = ListingStatus.Active;
-            }
-            finally
+            if (response.Osm?.Skipped != null)
             {
-                await _osmApiClient.CloseChangeset(osmSettings, changesetId);
+                _logger.LogWarning("OSM leg skipped: {Reason}", response.Osm.Skipped);
+            }
+            else if (response.Osm != null && response.Osm.NodeId.HasValue)
+            {
+                listing.OsmElementId = response.Osm.NodeId.Value;
+                listing.OsmElementType = response.Osm.NodeType ?? listing.OsmElementType;
+                listing.OsmElementVersion = response.Osm.NewVersion ?? 1;
+            }
+            listing.Status = ListingStatus.Active;
+
+            if (response.Directory != null)
+            {
+                if (response.Directory.PrUrl != null)
+                {
+                    listing.DirectorySubmittedAt = DateTimeOffset.UtcNow;
+                    listing.DirectorySubmittedUrl = settings.Url;
+                    listing.DirectoryPrUrl = response.Directory.PrUrl;
+                }
+                else if (response.Directory.Skipped?.StartsWith("duplicate-url:") == true)
+                {
+                    // URL already merged in merchants.json — track as submitted so the
+                    // merchants.json page-load check surfaces the merged banner.
+                    listing.DirectorySubmittedAt = DateTimeOffset.UtcNow;
+                    listing.DirectorySubmittedUrl = settings.Url;
+                    _logger.LogInformation("Directory submission skipped (already merged): {Reason}", response.Directory.Skipped);
+                }
+                else if (response.Directory.Skipped != null)
+                {
+                    _logger.LogInformation("Directory submission skipped: {Reason}", response.Directory.Skipped);
+                }
             }
 
             await using var updateCtx = _dbContextFactory.CreateContext();
             var dbListing = await updateCtx.Listings.FirstAsync(l => l.Id == listing.Id);
             dbListing.OsmElementId = listing.OsmElementId;
+            dbListing.OsmElementType = listing.OsmElementType;
             dbListing.OsmElementVersion = listing.OsmElementVersion;
             dbListing.Status = ListingStatus.Active;
+            dbListing.DirectorySubmittedAt = listing.DirectorySubmittedAt;
+            dbListing.DirectorySubmittedUrl = listing.DirectorySubmittedUrl;
+            dbListing.DirectoryPrUrl = listing.DirectoryPrUrl;
             await updateCtx.SaveChangesAsync();
 
             return listing;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "OSM operation failed for pending listing {ListingId}, store {StoreId}", listing.Id, storeId);
+            _logger.LogError(ex, "API submission failed for pending listing {ListingId}, store {StoreId}",
+                listing.Id, storeId);
             await using var cleanupCtx = _dbContextFactory.CreateContext();
             var pending = await cleanupCtx.Listings.FirstOrDefaultAsync(l => l.Id == listing.Id);
             if (pending != null)
@@ -132,8 +186,12 @@ public class BtcMapService
         }
     }
 
-    public async Task<BtcMapListing> LinkToExistingElement(string storeId, BtcMapStoreSettings settings,
-        string osmType, long osmId)
+    /// <summary>
+    /// Link an existing OSM element that already has currency:XBT tags, without
+    /// calling the API. Pure local bookkeeping — saves a rate-limited API call.
+    /// </summary>
+    public async Task<BtcMapListing> AutoLinkExisting(string storeId, BtcMapStoreSettings settings,
+        string osmType, long osmId, bool acceptsLightning)
     {
         var listing = new BtcMapListing
         {
@@ -149,11 +207,11 @@ public class BtcMapService
             City = settings.City,
             PostCode = settings.PostCode,
             Country = settings.Country,
-            AcceptsOnchain = settings.AcceptsOnchain,
-            AcceptsLightning = settings.AcceptsLightning,
+            AcceptsLightning = acceptsLightning,
             CreatedAt = DateTimeOffset.UtcNow,
             LastVerifiedAt = DateTimeOffset.UtcNow,
-            Status = ListingStatus.Pending
+            Status = ListingStatus.Active,
+            Url = settings.Url
         };
 
         await using var ctx = _dbContextFactory.CreateContext();
@@ -163,97 +221,36 @@ public class BtcMapService
         ctx.Listings.Add(listing);
         await ctx.SaveChangesAsync();
 
-        try
-        {
-            var osmSettings = await _osmAuthService.GetSettings();
-            var element = await _osmApiClient.GetElement(osmSettings, osmType, osmId);
-
-            var bitcoinTags = OsmApiClient.BuildBitcoinTags(settings.AcceptsOnchain, settings.AcceptsLightning);
-            foreach (var tag in bitcoinTags)
-                element.Tags[tag.Key] = tag.Value;
-
-            var comment = $"Add Bitcoin payment tags for {settings.BusinessName} #btcmap";
-            var changesetId = await _osmApiClient.CreateChangeset(osmSettings, comment);
-            int newVersion;
-            try
-            {
-                newVersion = await _osmApiClient.UpdateElement(osmSettings, changesetId, element);
-            }
-            finally
-            {
-                await _osmApiClient.CloseChangeset(osmSettings, changesetId);
-            }
-
-            await using var updateCtx = _dbContextFactory.CreateContext();
-            var dbListing = await updateCtx.Listings.FirstAsync(l => l.Id == listing.Id);
-            dbListing.OsmElementVersion = newVersion;
-            dbListing.Status = ListingStatus.Active;
-            await updateCtx.SaveChangesAsync();
-
-            listing.OsmElementVersion = newVersion;
-            listing.Status = ListingStatus.Active;
-            return listing;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "OSM operation failed for pending listing {ListingId}, store {StoreId}", listing.Id, storeId);
-            await using var cleanupCtx = _dbContextFactory.CreateContext();
-            var pending = await cleanupCtx.Listings.FirstOrDefaultAsync(l => l.Id == listing.Id);
-            if (pending != null)
-            {
-                cleanupCtx.Listings.Remove(pending);
-                await cleanupCtx.SaveChangesAsync();
-            }
-            throw;
-        }
+        return listing;
     }
 
-    public async Task UpdateListing(BtcMapListing listing, BtcMapStoreSettings settings)
+    public async Task UpdateListing(BtcMapListing listing, BtcMapStoreSettings settings, bool acceptsLightning)
     {
-        var osmSettings = await _osmAuthService.GetSettings();
-        const int maxRetries = 3;
-
-        for (var attempt = 0; attempt < maxRetries; attempt++)
+        var request = new BtcMapSubmitRequest
         {
-            var element = await _osmApiClient.GetElement(osmSettings,
-                listing.OsmElementType, listing.OsmElementId);
+            Name = settings.BusinessName,
+            Url = settings.Url,
+            Description = listing.Description,
+            OsmNodeId = listing.OsmElementId,
+            OsmNodeType = listing.OsmElementType,
+            TagOnOsm = true,
+            SubmitToDirectory = false,
+            AcceptsLightning = acceptsLightning
+        };
 
-            var bitcoinTags = OsmApiClient.BuildBitcoinTags(settings.AcceptsOnchain, settings.AcceptsLightning);
-            foreach (var tag in bitcoinTags)
-                element.Tags[tag.Key] = tag.Value;
+        var response = await _apiClient.SubmitAsync(request);
 
-            // Remove payment methods that are no longer enabled
-            if (!settings.AcceptsOnchain)
-                element.Tags.Remove("payment:onchain");
-            if (!settings.AcceptsLightning)
-                element.Tags.Remove("payment:lightning");
-
-            var comment = $"Update Bitcoin payment tags for {settings.BusinessName} #btcmap";
-            var changesetId = await _osmApiClient.CreateChangeset(osmSettings, comment);
-            try
-            {
-                var newVersion = await _osmApiClient.UpdateElement(osmSettings, changesetId, element);
-
-                await using var ctx = _dbContextFactory.CreateContext();
-                var dbListing = await ctx.Listings.FirstAsync(l => l.Id == listing.Id);
-                dbListing.OsmElementVersion = newVersion;
-                dbListing.BusinessName = settings.BusinessName;
-                dbListing.Category = settings.Category;
-                dbListing.AcceptsOnchain = settings.AcceptsOnchain;
-                dbListing.AcceptsLightning = settings.AcceptsLightning;
-                dbListing.LastVerifiedAt = DateTimeOffset.UtcNow;
-                await ctx.SaveChangesAsync();
-                return;
-            }
-            catch (OsmVersionConflictException) when (attempt < maxRetries - 1)
-            {
-                _logger.LogWarning("Version conflict on attempt {Attempt}, retrying", attempt + 1);
-            }
-            finally
-            {
-                await _osmApiClient.CloseChangeset(osmSettings, changesetId);
-            }
-        }
+        await using var ctx = _dbContextFactory.CreateContext();
+        var dbListing = await ctx.Listings.FirstAsync(l => l.Id == listing.Id);
+        if (response.Osm?.Skipped != null)
+            _logger.LogWarning("OSM leg skipped during update: {Reason}", response.Osm.Skipped);
+        else if (response.Osm?.NewVersion != null)
+            dbListing.OsmElementVersion = response.Osm.NewVersion.Value;
+        dbListing.BusinessName = settings.BusinessName;
+        dbListing.Category = settings.Category;
+        dbListing.AcceptsLightning = acceptsLightning;
+        dbListing.LastVerifiedAt = DateTimeOffset.UtcNow;
+        await ctx.SaveChangesAsync();
     }
 
     public async Task UnlistStore(string storeId)
@@ -262,88 +259,142 @@ public class BtcMapService
         if (listing == null || listing.Status == ListingStatus.Unlisted)
             return;
 
-        var osmSettings = await _osmAuthService.GetSettings();
-        var element = await _osmApiClient.GetElement(osmSettings,
-            listing.OsmElementType, listing.OsmElementId);
+        // API validates Url + Description on every request, even when unlisting,
+        // so we send synthetic placeholders. They are not used downstream.
+        var request = new BtcMapSubmitRequest
+        {
+            Name = listing.BusinessName,
+            Url = "https://btcpayserver.org",
+            Description = $"Unlisting {listing.BusinessName} from BTC Map.",
+            OsmNodeId = listing.OsmElementId,
+            OsmNodeType = listing.OsmElementType,
+            UnlistFromOsm = true
+        };
 
-        // Remove only Bitcoin-related tags
-        foreach (var key in OsmApiClient.BitcoinTagKeys)
-            element.Tags.Remove(key);
-
-        var comment = $"Remove Bitcoin payment tags for {listing.BusinessName} #btcmap";
-        var changesetId = await _osmApiClient.CreateChangeset(osmSettings, comment);
         try
         {
-            await _osmApiClient.UpdateElement(osmSettings, changesetId, element);
+            await _apiClient.SubmitAsync(request);
         }
-        finally
+        catch (PluginBuilderApiException ex)
         {
-            await _osmApiClient.CloseChangeset(osmSettings, changesetId);
+            _logger.LogWarning(ex, "API unlist call failed for store {StoreId}, proceeding with local unlist", storeId);
         }
 
         await using var ctx = _dbContextFactory.CreateContext();
         var dbListing = await ctx.Listings.FirstAsync(l => l.Id == listing.Id);
         dbListing.Status = ListingStatus.Unlisted;
+        // Clear all directory state so a future re-list doesn't inherit stale data.
+        dbListing.Url = null;
+        dbListing.Description = null;
+        dbListing.Twitter = null;
+        dbListing.Github = null;
+        dbListing.OnionUrl = null;
+        dbListing.DirectoryType = null;
+        dbListing.DirectorySubType = null;
+        dbListing.DirectorySubmittedAt = null;
+        dbListing.DirectorySubmittedUrl = null;
+        dbListing.DirectoryPrUrl = null;
         await ctx.SaveChangesAsync();
     }
 
-    public async Task ReverifyListing(BtcMapListing listing)
+    public async Task ReverifyListing(BtcMapListing listing, bool acceptsLightning)
     {
-        var osmSettings = await _osmAuthService.GetSettings();
-
-        var element = await _osmApiClient.GetElement(osmSettings,
-            listing.OsmElementType, listing.OsmElementId);
-
-        element.Tags["check_date:currency:XBT"] = DateTime.UtcNow.ToString("yyyy-MM-dd");
-
-        var comment = $"Re-verify Bitcoin acceptance for {listing.BusinessName} #btcmap";
-        var changesetId = await _osmApiClient.CreateChangeset(osmSettings, comment);
-        try
+        var request = new BtcMapSubmitRequest
         {
-            var newVersion = await _osmApiClient.UpdateElement(osmSettings, changesetId, element);
+            Name = listing.BusinessName,
+            Url = listing.Url,
+            Description = listing.Description,
+            OsmNodeId = listing.OsmElementId,
+            OsmNodeType = listing.OsmElementType,
+            TagOnOsm = true,
+            SubmitToDirectory = false,
+            AcceptsLightning = acceptsLightning
+        };
 
-            await using var ctx = _dbContextFactory.CreateContext();
-            var dbListing = await ctx.Listings.FirstAsync(l => l.Id == listing.Id);
-            dbListing.OsmElementVersion = newVersion;
-            dbListing.LastVerifiedAt = DateTimeOffset.UtcNow;
-            await ctx.SaveChangesAsync();
-        }
-        finally
-        {
-            await _osmApiClient.CloseChangeset(osmSettings, changesetId);
-        }
+        var response = await _apiClient.SubmitAsync(request);
+
+        await using var ctx = _dbContextFactory.CreateContext();
+        var dbListing = await ctx.Listings.FirstAsync(l => l.Id == listing.Id);
+        if (response.Osm?.Skipped != null)
+            _logger.LogWarning("OSM leg skipped during reverify: {Reason}", response.Osm.Skipped);
+        else if (response.Osm?.NewVersion != null)
+            dbListing.OsmElementVersion = response.Osm.NewVersion.Value;
+        dbListing.LastVerifiedAt = DateTimeOffset.UtcNow;
+        await ctx.SaveChangesAsync();
     }
 
-    private static Dictionary<string, string> BuildAllTags(BtcMapStoreSettings settings, bool isNewNode)
+    public async Task<BtcMapSubmitResponse> SubmitToDirectoryOnly(BtcMapListing listing, BtcMapStoreSettings settings)
     {
-        var tags = OsmApiClient.BuildBitcoinTags(settings.AcceptsOnchain, settings.AcceptsLightning);
-
-        if (isNewNode)
+        var request = new BtcMapSubmitRequest
         {
-            tags["name"] = settings.BusinessName;
+            Name = listing.BusinessName,
+            Url = listing.Url,
+            Description = settings.DirectoryDescription,
+            Type = settings.DirectoryType,
+            SubType = settings.DirectorySubType,
+            Country = listing.Country,
+            Twitter = settings.DirectoryTwitter,
+            Github = settings.DirectoryGithub,
+            OnionUrl = settings.DirectoryOnionUrl,
+            SubmitToDirectory = true
+        };
 
-            // Common amenity/shop categories
-            var shopCategories = new HashSet<string>
-            {
-                "supermarket", "convenience", "clothes", "electronics", "jewelry",
-                "hardware", "books", "gift", "general", "mall"
-            };
+        var response = await _apiClient.SubmitAsync(request);
 
-            if (shopCategories.Contains(settings.Category))
-                tags["shop"] = settings.Category;
-            else
-                tags["amenity"] = settings.Category;
-
-            if (!string.IsNullOrWhiteSpace(settings.Street))
-                tags["addr:street"] = settings.Street;
-            if (!string.IsNullOrWhiteSpace(settings.City))
-                tags["addr:city"] = settings.City;
-            if (!string.IsNullOrWhiteSpace(settings.PostCode))
-                tags["addr:postcode"] = settings.PostCode;
-            if (!string.IsNullOrWhiteSpace(settings.Country))
-                tags["addr:country"] = settings.Country;
+        if (response.Directory?.PrUrl != null)
+        {
+            await using var ctx = _dbContextFactory.CreateContext();
+            var dbListing = await ctx.Listings.FirstAsync(l => l.Id == listing.Id);
+            dbListing.DirectorySubmittedAt = DateTimeOffset.UtcNow;
+            dbListing.DirectorySubmittedUrl = listing.Url;
+            dbListing.DirectoryPrUrl = response.Directory.PrUrl;
+            // Persist the directory-specific fields submitted by the merchant so
+            // the active listing pre-fills future re-submissions.
+            dbListing.Description = settings.DirectoryDescription;
+            dbListing.Twitter = settings.DirectoryTwitter;
+            dbListing.Github = settings.DirectoryGithub;
+            dbListing.OnionUrl = settings.DirectoryOnionUrl;
+            dbListing.DirectoryType = settings.DirectoryType;
+            dbListing.DirectorySubType = settings.DirectorySubType;
+            await ctx.SaveChangesAsync();
+        }
+        else if (response.Directory?.Skipped?.StartsWith("duplicate-url:") == true)
+        {
+            // URL already in merchants.json — record submission state so the
+            // merchants.json check on next page load surfaces the merged banner.
+            await using var ctx = _dbContextFactory.CreateContext();
+            var dbListing = await ctx.Listings.FirstAsync(l => l.Id == listing.Id);
+            dbListing.DirectorySubmittedAt = DateTimeOffset.UtcNow;
+            dbListing.DirectorySubmittedUrl = listing.Url;
+            dbListing.Description = settings.DirectoryDescription;
+            dbListing.Twitter = settings.DirectoryTwitter;
+            dbListing.Github = settings.DirectoryGithub;
+            dbListing.OnionUrl = settings.DirectoryOnionUrl;
+            dbListing.DirectoryType = settings.DirectoryType;
+            dbListing.DirectorySubType = settings.DirectorySubType;
+            await ctx.SaveChangesAsync();
         }
 
-        return tags;
+        return response;
+    }
+
+    public async Task RecordDirectorySubmission(string storeId, string url)
+    {
+        await using var ctx = _dbContextFactory.CreateContext();
+        var listing = await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId);
+        if (listing == null) return;
+        listing.DirectorySubmittedAt = DateTimeOffset.UtcNow;
+        listing.DirectorySubmittedUrl = url;
+        await ctx.SaveChangesAsync();
+    }
+
+    public async Task ClearDirectorySubmission(string storeId)
+    {
+        await using var ctx = _dbContextFactory.CreateContext();
+        var listing = await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId);
+        if (listing == null) return;
+        listing.DirectorySubmittedAt = null;
+        listing.DirectorySubmittedUrl = null;
+        await ctx.SaveChangesAsync();
     }
 }

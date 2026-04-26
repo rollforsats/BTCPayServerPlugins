@@ -23,13 +23,17 @@ public class BtcMapStoreSettings
     [Range(-180, 180)]
     public double? Longitude { get; set; }
 
-    public bool AcceptsOnchain { get; set; } = true;
     public bool AcceptsLightning { get; set; } = true;
 
-    // Directory submission fields (validated only in directory flow)
-    public string DirectoryUrl { get; set; }
+    // Website URL — always required, used as OSM website= tag and (when selected) in directory submission
+    public string Url { get; set; }
+
+    // Directory submission — checkbox on form controls whether these are sent
+    public bool SubmitToDirectory { get; set; } = true;
     public string DirectoryDescription { get; set; }
     public string DirectoryTwitter { get; set; }
+    public string DirectoryGithub { get; set; }
+    public string DirectoryOnionUrl { get; set; }
     public string DirectoryType { get; set; }
     public string DirectorySubType { get; set; }
 }

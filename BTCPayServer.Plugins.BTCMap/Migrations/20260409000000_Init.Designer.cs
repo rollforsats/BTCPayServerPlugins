@@ -34,9 +34,6 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
                     b.Property<bool>("AcceptsLightning")
                         .HasColumnType("boolean");
 
-                    b.Property<bool>("AcceptsOnchain")
-                        .HasColumnType("boolean");
-
                     b.Property<string>("BusinessName")
                         .HasColumnType("text");
 
