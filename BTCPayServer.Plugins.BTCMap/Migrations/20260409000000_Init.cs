@@ -28,6 +28,7 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
                     Category = table.Column<string>(type: "text", nullable: true),
                     Latitude = table.Column<double>(type: "double precision", nullable: false),
                     Longitude = table.Column<double>(type: "double precision", nullable: false),
+                    HouseNumber = table.Column<string>(type: "text", nullable: true),
                     Street = table.Column<string>(type: "text", nullable: true),
                     City = table.Column<string>(type: "text", nullable: true),
                     PostCode = table.Column<string>(type: "text", nullable: true),

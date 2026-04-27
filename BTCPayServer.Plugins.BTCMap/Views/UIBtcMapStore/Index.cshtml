@@ -227,15 +227,20 @@
 
                 <p class="text-muted small mb-2">
                     Address fields below are optional &mdash; they help find your business on OpenStreetMap.
+                    House number and street are kept separate to match OSM's addressing convention.
                     <strong>Latitude and longitude are required.</strong> If you have an address but no coordinates,
-                    fill in Street/City/PostCode/Country and click <strong>Lookup Coordinates</strong>.
+                    fill in the address fields and click <strong>Lookup Coordinates</strong>.
                 </p>
                 <div class="row mb-3">
-                    <div class="col-md-6">
-                        <label asp-for="Settings.Street" class="form-label">Street Address</label>
-                        <input asp-for="Settings.Street" class="form-control" />
+                    <div class="col-md-3">
+                        <label asp-for="Settings.HouseNumber" class="form-label">House Number</label>
+                        <input asp-for="Settings.HouseNumber" class="form-control" placeholder="e.g., 123, 12A" />
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-md-5">
+                        <label asp-for="Settings.Street" class="form-label">Street</label>
+                        <input asp-for="Settings.Street" class="form-control" placeholder="e.g., Main Street" />
+                    </div>
+                    <div class="col-md-4">
                         <label asp-for="Settings.City" class="form-label">City</label>
                         <input asp-for="Settings.City" class="form-control" />
                     </div>
@@ -270,7 +275,7 @@
 
                 <h4 class="mt-5 mb-3">BTCPay Directory</h4>
                 <div class="form-check mb-3">
-                    <input type="checkbox" class="form-check-input" id="submitToDirectory" name="Settings.SubmitToDirectory" value="true" checked />
+                    <input asp-for="Settings.SubmitToDirectory" type="checkbox" class="form-check-input" id="submitToDirectory" />
                     <label class="form-check-label" for="submitToDirectory">
                         Also list on <a href="https://directory.btcpayserver.org" target="_blank" rel="noopener noreferrer">directory.btcpayserver.org</a>
                     </label>

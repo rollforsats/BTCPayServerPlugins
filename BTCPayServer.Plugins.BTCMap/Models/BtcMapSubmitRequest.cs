@@ -35,4 +35,18 @@ public class BtcMapSubmitRequest
     // Remove bitcoin-related tags from an existing OSM element.
     // Mutually exclusive with TagOnOsm and SubmitToDirectory.
     public bool UnlistFromOsm { get; set; }
+
+    // Optional structured address — written as OSM addr:* tags by the server
+    // when present. Plugin splits raw merchant input into the canonical OSM
+    // components (housenumber + street separated, per OSM convention).
+    public BtcMapSubmitAddress Address { get; set; }
+}
+
+public class BtcMapSubmitAddress
+{
+    public string HouseNumber { get; set; }
+    public string Street { get; set; }
+    public string City { get; set; }
+    public string Postcode { get; set; }
+    public string Country { get; set; }
 }

@@ -133,8 +133,6 @@
                                 var elLon = element.EffectiveLon?.ToString(inv) ?? lonStr;
                                 tags.TryGetValue("addr:street", out var elStreet);
                                 tags.TryGetValue("addr:housenumber", out var elHn);
-                                var elStreetFull = string.Join(" ",
-                                    new[] { elHn, elStreet }.Where(s => !string.IsNullOrWhiteSpace(s)));
                                 tags.TryGetValue("addr:city", out var elCity);
                                 tags.TryGetValue("addr:postcode", out var elPostCode);
                                 tags.TryGetValue("addr:country", out var elCountry);
@@ -146,7 +144,8 @@
                                 <input type="hidden" name="Category" value="@elCategory" />
                                 <input type="hidden" name="Latitude" value="@elLat" />
                                 <input type="hidden" name="Longitude" value="@elLon" />
-                                <input type="hidden" name="Street" value="@elStreetFull" />
+                                <input type="hidden" name="HouseNumber" value="@elHn" />
+                                <input type="hidden" name="Street" value="@elStreet" />
                                 <input type="hidden" name="City" value="@elCity" />
                                 <input type="hidden" name="PostCode" value="@elPostCode" />
                                 <input type="hidden" name="Country" value="@elCountry" />
@@ -160,7 +159,6 @@
                                 <input type="hidden" name="DirectoryOnionUrl" value="@Model.Settings.DirectoryOnionUrl" />
                                 <input type="hidden" name="osmType" value="@element.Type" />
                                 <input type="hidden" name="osmId" value="@element.Id" />
-                                <input type="hidden" name="alreadyTagged" value="@(hasBtc ? "true" : "false")" />
                                 <input type="hidden" name="submitToDirectory" value="@(Model.Settings.SubmitToDirectory ? "true" : "false")" />
                                 @if (hasBtc)
                                 {
@@ -193,6 +191,7 @@
             <input type="hidden" name="Settings.Category" value="@Model.Settings.Category" />
             <input type="hidden" name="Settings.Latitude" value="@latStr" />
             <input type="hidden" name="Settings.Longitude" value="@lonStr" />
+            <input type="hidden" name="Settings.HouseNumber" value="@Model.Settings.HouseNumber" />
             <input type="hidden" name="Settings.Street" value="@Model.Settings.Street" />
             <input type="hidden" name="Settings.City" value="@Model.Settings.City" />
             <input type="hidden" name="Settings.PostCode" value="@Model.Settings.PostCode" />

@@ -83,7 +83,8 @@ public class BtcMapService
             OsmCategory = osmId == null ? settings.Category : null,
             SubmitToDirectory = submitToDirectory,
             TagOnOsm = true,
-            AcceptsLightning = acceptsLightning
+            AcceptsLightning = acceptsLightning,
+            Address = BuildAddress(settings.HouseNumber, settings.Street, settings.City, settings.PostCode, settings.Country)
         };
 
         var listing = new BtcMapListing
@@ -96,6 +97,7 @@ public class BtcMapService
             Category = settings.Category,
             Latitude = settings.Latitude.Value,
             Longitude = settings.Longitude.Value,
+            HouseNumber = settings.HouseNumber,
             Street = settings.Street,
             City = settings.City,
             PostCode = settings.PostCode,
@@ -186,44 +188,6 @@ public class BtcMapService
         }
     }
 
-    /// <summary>
-    /// Link an existing OSM element that already has currency:XBT tags, without
-    /// calling the API. Pure local bookkeeping — saves a rate-limited API call.
-    /// </summary>
-    public async Task<BtcMapListing> AutoLinkExisting(string storeId, BtcMapStoreSettings settings,
-        string osmType, long osmId, bool acceptsLightning)
-    {
-        var listing = new BtcMapListing
-        {
-            Id = Guid.NewGuid().ToString(),
-            StoreId = storeId,
-            OsmElementType = osmType,
-            OsmElementId = osmId,
-            BusinessName = settings.BusinessName,
-            Category = settings.Category,
-            Latitude = settings.Latitude.Value,
-            Longitude = settings.Longitude.Value,
-            Street = settings.Street,
-            City = settings.City,
-            PostCode = settings.PostCode,
-            Country = settings.Country,
-            AcceptsLightning = acceptsLightning,
-            CreatedAt = DateTimeOffset.UtcNow,
-            LastVerifiedAt = DateTimeOffset.UtcNow,
-            Status = ListingStatus.Active,
-            Url = settings.Url
-        };
-
-        await using var ctx = _dbContextFactory.CreateContext();
-        var existing = await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId);
-        if (existing != null)
-            ctx.Listings.Remove(existing);
-        ctx.Listings.Add(listing);
-        await ctx.SaveChangesAsync();
-
-        return listing;
-    }
-
     public async Task UpdateListing(BtcMapListing listing, BtcMapStoreSettings settings, bool acceptsLightning)
     {
         var request = new BtcMapSubmitRequest
@@ -235,7 +199,8 @@ public class BtcMapService
             OsmNodeType = listing.OsmElementType,
             TagOnOsm = true,
             SubmitToDirectory = false,
-            AcceptsLightning = acceptsLightning
+            AcceptsLightning = acceptsLightning,
+            Address = BuildAddress(settings.HouseNumber, settings.Street, settings.City, settings.PostCode, settings.Country)
         };
 
         var response = await _apiClient.SubmitAsync(request);
@@ -249,6 +214,11 @@ public class BtcMapService
         dbListing.BusinessName = settings.BusinessName;
         dbListing.Category = settings.Category;
         dbListing.Url = settings.Url;
+        dbListing.HouseNumber = settings.HouseNumber;
+        dbListing.Street = settings.Street;
+        dbListing.City = settings.City;
+        dbListing.PostCode = settings.PostCode;
+        dbListing.Country = settings.Country;
         dbListing.AcceptsLightning = acceptsLightning;
         dbListing.LastVerifiedAt = DateTimeOffset.UtcNow;
         await ctx.SaveChangesAsync();
@@ -307,7 +277,8 @@ public class BtcMapService
             OsmNodeType = listing.OsmElementType,
             TagOnOsm = true,
             SubmitToDirectory = false,
-            AcceptsLightning = acceptsLightning
+            AcceptsLightning = acceptsLightning,
+            Address = BuildAddress(listing.HouseNumber, listing.Street, listing.City, listing.PostCode, listing.Country)
         };
 
         var response = await _apiClient.SubmitAsync(request);
@@ -377,4 +348,19 @@ public class BtcMapService
         return response;
     }
 
+    private static BtcMapSubmitAddress BuildAddress(string houseNumber, string street, string city, string postcode, string country)
+    {
+        if (string.IsNullOrWhiteSpace(houseNumber) && string.IsNullOrWhiteSpace(street) &&
+            string.IsNullOrWhiteSpace(city) && string.IsNullOrWhiteSpace(postcode) &&
+            string.IsNullOrWhiteSpace(country))
+            return null;
+        return new BtcMapSubmitAddress
+        {
+            HouseNumber = houseNumber,
+            Street = street,
+            City = city,
+            Postcode = postcode,
+            Country = country
+        };
+    }
 }

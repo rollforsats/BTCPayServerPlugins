@@ -55,6 +55,9 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
                     b.Property<string>("DirectorySubmittedUrl")
                         .HasColumnType("text");
 
+                    b.Property<string>("HouseNumber")
+                        .HasColumnType("text");
+
                     b.Property<DateTimeOffset>("LastVerifiedAt")
                         .HasColumnType("timestamp with time zone");
 

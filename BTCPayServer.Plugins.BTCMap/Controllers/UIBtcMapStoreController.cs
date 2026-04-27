@@ -68,7 +68,9 @@ public class UIBtcMapStoreController : Controller
 
         if (listing != null)
         {
-            var parts = new[] { listing.Street, listing.City, listing.PostCode, listing.Country }
+            var streetLine = string.Join(" ",
+                new[] { listing.HouseNumber, listing.Street }.Where(s => !string.IsNullOrWhiteSpace(s)));
+            var parts = new[] { streetLine, listing.City, listing.PostCode, listing.Country }
                 .Where(p => !string.IsNullOrWhiteSpace(p));
             vm.Address = string.Join(", ", parts);
 
@@ -115,6 +117,7 @@ public class UIBtcMapStoreController : Controller
                 Category = listing.Category,
                 Latitude = listing.Latitude,
                 Longitude = listing.Longitude,
+                HouseNumber = listing.HouseNumber,
                 Street = listing.Street,
                 City = listing.City,
                 PostCode = listing.PostCode,
@@ -187,7 +190,7 @@ public class UIBtcMapStoreController : Controller
 
     [HttpPost("link")]
     public async Task<IActionResult> LinkExisting(string storeId, BtcMapStoreSettings model,
-        string osmType, long osmId, bool alreadyTagged = false, bool submitToDirectory = false)
+        string osmType, long osmId, bool submitToDirectory = false)
     {
         if (!ModelState.IsValid)
         {
@@ -204,21 +207,10 @@ public class UIBtcMapStoreController : Controller
         try
         {
             var acceptsLightning = StoreAcceptsLightning();
-
-            if (alreadyTagged && !submitToDirectory)
-            {
-                // Element already has Bitcoin tags and no directory submission requested.
-                // Pure local bookkeeping — no API call needed.
-                await _btcMapService.AutoLinkExisting(storeId, model, osmType, osmId, acceptsLightning);
-                TempData["StatusMessage"] = "Your store has been linked to the existing BTC Map listing.";
-            }
-            else
-            {
-                await _btcMapService.SubmitListing(storeId, model, acceptsLightning, submitToDirectory, osmType, osmId);
-                TempData["StatusMessage"] = alreadyTagged
-                    ? "Your store has been linked and submitted to the BTCPay Directory."
-                    : "Bitcoin acceptance tags added! It may take up to 10 minutes to appear on BTC Map.";
-            }
+            await _btcMapService.SubmitListing(storeId, model, acceptsLightning, submitToDirectory, osmType, osmId);
+            TempData["StatusMessage"] = submitToDirectory
+                ? "Your store has been linked on BTC Map and submitted to the BTCPay Directory."
+                : "Your store has been linked on BTC Map. It may take up to 10 minutes for changes to appear.";
             return RedirectToAction(nameof(Index), new { storeId });
         }
         catch (PluginBuilderApiException ex)
@@ -389,7 +381,9 @@ public class UIBtcMapStoreController : Controller
 
         try
         {
-            var result = await _nominatimApiClient.Geocode(model.Street, model.City, model.PostCode, model.Country);
+            var streetForGeocode = string.Join(" ",
+                new[] { model.HouseNumber, model.Street }.Where(s => !string.IsNullOrWhiteSpace(s)));
+            var result = await _nominatimApiClient.Geocode(streetForGeocode, model.City, model.PostCode, model.Country);
             if (result == null)
                 return Json(new { success = false, message = "Address not found." });
 
