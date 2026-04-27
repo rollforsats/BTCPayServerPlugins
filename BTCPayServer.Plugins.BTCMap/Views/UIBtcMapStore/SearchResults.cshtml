@@ -132,9 +132,9 @@
                                 var elLat = element.EffectiveLat?.ToString(inv) ?? latStr;
                                 var elLon = element.EffectiveLon?.ToString(inv) ?? lonStr;
                                 tags.TryGetValue("addr:street", out var elStreet);
-                                var elStreetFull = elStreet ?? "";
-                                if (tags.TryGetValue("addr:housenumber", out var elHn) && !string.IsNullOrWhiteSpace(elStreet))
-                                    elStreetFull = elHn + " " + elStreet;
+                                tags.TryGetValue("addr:housenumber", out var elHn);
+                                var elStreetFull = string.Join(" ",
+                                    new[] { elHn, elStreet }.Where(s => !string.IsNullOrWhiteSpace(s)));
                                 tags.TryGetValue("addr:city", out var elCity);
                                 tags.TryGetValue("addr:postcode", out var elPostCode);
                                 tags.TryGetValue("addr:country", out var elCountry);

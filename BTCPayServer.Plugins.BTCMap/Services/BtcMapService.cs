@@ -248,6 +248,7 @@ public class BtcMapService
             dbListing.OsmElementVersion = response.Osm.NewVersion.Value;
         dbListing.BusinessName = settings.BusinessName;
         dbListing.Category = settings.Category;
+        dbListing.Url = settings.Url;
         dbListing.AcceptsLightning = acceptsLightning;
         dbListing.LastVerifiedAt = DateTimeOffset.UtcNow;
         await ctx.SaveChangesAsync();
@@ -259,13 +260,11 @@ public class BtcMapService
         if (listing == null || listing.Status == ListingStatus.Unlisted)
             return;
 
-        // API validates Url + Description on every request, even when unlisting,
-        // so we send synthetic placeholders. They are not used downstream.
         var request = new BtcMapSubmitRequest
         {
             Name = listing.BusinessName,
-            Url = "https://btcpayserver.org",
-            Description = $"Unlisting {listing.BusinessName} from BTC Map.",
+            Url = listing.Url,
+            Description = listing.Description,
             OsmNodeId = listing.OsmElementId,
             OsmNodeType = listing.OsmElementType,
             UnlistFromOsm = true
@@ -378,23 +377,4 @@ public class BtcMapService
         return response;
     }
 
-    public async Task RecordDirectorySubmission(string storeId, string url)
-    {
-        await using var ctx = _dbContextFactory.CreateContext();
-        var listing = await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId);
-        if (listing == null) return;
-        listing.DirectorySubmittedAt = DateTimeOffset.UtcNow;
-        listing.DirectorySubmittedUrl = url;
-        await ctx.SaveChangesAsync();
-    }
-
-    public async Task ClearDirectorySubmission(string storeId)
-    {
-        await using var ctx = _dbContextFactory.CreateContext();
-        var listing = await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId);
-        if (listing == null) return;
-        listing.DirectorySubmittedAt = null;
-        listing.DirectorySubmittedUrl = null;
-        await ctx.SaveChangesAsync();
-    }
 }

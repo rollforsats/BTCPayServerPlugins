@@ -26,6 +26,7 @@ public class BtcMapStoreSettings
     public bool AcceptsLightning { get; set; } = true;
 
     // Website URL — always required, used as OSM website= tag and (when selected) in directory submission
+    [Required]
     public string Url { get; set; }
 
     // Directory submission — checkbox on form controls whether these are sent

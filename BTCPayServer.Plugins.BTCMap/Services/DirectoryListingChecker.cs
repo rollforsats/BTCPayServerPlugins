@@ -44,11 +44,21 @@ public class DirectoryListingChecker
                 var client = _httpClientFactory.CreateClient("DirectoryRawApi");
                 var response = await client.GetAsync(MerchantsJsonUrl);
                 if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("merchants.json fetch failed with status {Status}", (int)response.StatusCode);
+                    entry.AbsoluteExpirationRelativeToNow = TimeSpan.Zero;
                     return null;
+                }
 
                 var json = await response.Content.ReadAsStringAsync();
-                return JsonSerializer.Deserialize<List<DirectoryEntry>>(json,
+                var deserialized = JsonSerializer.Deserialize<List<DirectoryEntry>>(json,
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (deserialized == null)
+                {
+                    _logger.LogWarning("merchants.json deserialized to null");
+                    entry.AbsoluteExpirationRelativeToNow = TimeSpan.Zero;
+                }
+                return deserialized;
             });
 
             if (entries == null)

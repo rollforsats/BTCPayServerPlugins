@@ -45,7 +45,7 @@ public class UIBtcMapStoreController : Controller
     private bool StoreAcceptsLightning()
     {
         var storeData = HttpContext.GetStoreData();
-        if (storeData == null) return true;
+        if (storeData == null) return false;
         return storeData.GetEnabledPaymentIds()
             .Select(p => p.ToString())
             .Any(id => string.Equals(id, "BTC-LN", StringComparison.OrdinalIgnoreCase));
@@ -340,10 +340,21 @@ public class UIBtcMapStoreController : Controller
         try
         {
             var response = await _btcMapService.SubmitToDirectoryOnly(listing, model);
-            if (response.Directory?.Skipped?.StartsWith("duplicate-url:") == true)
+            var skipped = response.Directory?.Skipped;
+            if (skipped?.StartsWith("duplicate-url:") == true)
                 TempData["StatusMessage"] = "This URL is already listed in the BTCPay Server Directory.";
-            else if (response.Directory?.Skipped != null)
-                TempData["StatusMessage"] = $"Directory submission skipped: {response.Directory.Skipped}";
+            else if (skipped == "duplicate-open-pr")
+                TempData["StatusMessage"] = "A pending submission for your store already exists in the BTCPay Server Directory.";
+            else if (skipped == "directory-github-token-not-configured")
+            {
+                _logger.LogWarning("Directory submission skipped (server config): {Reason}", skipped);
+                TempData["StatusMessage"] = "The BTCPay Server Directory is temporarily unavailable. Please try again later.";
+            }
+            else if (skipped != null)
+            {
+                _logger.LogWarning("Directory submission skipped (unknown reason): {Reason}", skipped);
+                TempData["StatusMessage"] = "Directory submission could not be completed.";
+            }
             else if (response.Directory?.PrUrl != null)
                 TempData["StatusMessage"] = "Submitted to the BTCPay Server Directory! A PR has been opened for review.";
             else

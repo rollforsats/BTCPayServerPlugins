@@ -90,7 +90,8 @@ public class PluginBuilderApiClient
 
         // 409 "already-unlisted" is treated as success — the merchant is unlisted either way
         if (response.StatusCode == HttpStatusCode.Conflict)
-            return JsonSerializer.Deserialize<BtcMapSubmitResponse>(body, JsonOptions);
+            return JsonSerializer.Deserialize<BtcMapSubmitResponse>(body, JsonOptions)
+                   ?? new BtcMapSubmitResponse();
 
         if (!response.IsSuccessStatusCode)
         {
@@ -100,7 +101,8 @@ public class PluginBuilderApiClient
                 "An unexpected error occurred. Please try again later.");
         }
 
-        return JsonSerializer.Deserialize<BtcMapSubmitResponse>(body, JsonOptions);
+        return JsonSerializer.Deserialize<BtcMapSubmitResponse>(body, JsonOptions)
+               ?? new BtcMapSubmitResponse();
     }
 
     private class ValidationErrorResponse
