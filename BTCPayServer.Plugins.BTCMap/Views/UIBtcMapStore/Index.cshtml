@@ -123,6 +123,15 @@
                         <input name="Settings.DirectoryOnionUrl" class="form-control" placeholder="http://yoursite.onion (optional)"
                                value="@Model.Settings.DirectoryOnionUrl" />
                     </div>
+                    <div class="form-group mb-3">
+                        <label asp-for="Settings.Country" class="form-label">
+                            Country Code <span class="text-danger">*</span>
+                        </label>
+                        <select asp-for="Settings.Country" class="form-select" required
+                                asp-items="@IsoCountries.SelectListItems">
+                            <option value="">— Select country —</option>
+                        </select>
+                    </div>
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label class="form-label">Type <span class="text-danger">*</span></label>
@@ -133,7 +142,7 @@
                         </div>
                         <div class="col-md-6" id="active_dir_subTypeGroup">
                             <label class="form-label">Subcategory <span class="text-danger">*</span></label>
-                            <select name="Settings.DirectorySubType" class="form-select" required asp-for="Settings.DirectorySubType">
+                            <select name="Settings.DirectorySubType" class="form-select" asp-for="Settings.DirectorySubType">
                                 <option value="">Select a subcategory...</option>
                                 <option value="3d-printing">3D Printing</option>
                                 <option value="adult">Adult</option>
@@ -386,12 +395,15 @@
         if (!dirFields) return;
         const checked = dirCheckbox?.checked ?? false;
         dirFields.style.display = checked ? '' : 'none';
-        // Toggle required on directory fields marked with *
-        ['Settings_DirectoryDescription', 'Settings_DirectoryType', 'Settings_DirectorySubType'].forEach(function(id) {
+        ['Settings_DirectoryDescription', 'Settings_DirectoryType'].forEach(function(id) {
             const el = document.getElementById(id);
             if (el) el.required = checked;
         });
-        // Country is in the address section but required for directory submissions
+        const subTypeEl = document.getElementById('Settings_DirectorySubType');
+        if (subTypeEl) {
+            const directoryType = document.getElementById('dir_Type')?.value ?? 'merchants';
+            subTypeEl.required = checked && directoryType === 'merchants';
+        }
         const countryEl = document.getElementById('Settings_Country');
         if (countryEl) countryEl.required = checked;
         const countryAsterisk = document.getElementById('Settings_Country_required');
@@ -400,10 +412,22 @@
     dirCheckbox?.addEventListener('change', toggleDirectoryFields);
     toggleDirectoryFields();
 
+    // Active-listing form: no SubmitToDirectory gate (the form *is* the submission).
+    // SubType is required iff DirectoryType is "merchants".
+    function syncActiveSubTypeRequired() {
+        const subTypeEl = document.getElementById('Settings_DirectorySubType');
+        const activeType = document.getElementById('active_dir_Type');
+        if (subTypeEl && activeType) {
+            subTypeEl.required = activeType.value === 'merchants';
+        }
+    }
+    syncActiveSubTypeRequired();
+
     // Directory type/subtype toggle
     document.getElementById('dir_Type')?.addEventListener('change', function() {
         const group = document.getElementById('dir_subTypeGroup');
         if (group) group.style.display = this.value === 'merchants' ? '' : 'none';
+        toggleDirectoryFields();
     });
 
     // Character counter
@@ -415,5 +439,6 @@
     document.getElementById('active_dir_Type')?.addEventListener('change', function() {
         const group = document.getElementById('active_dir_subTypeGroup');
         if (group) group.style.display = this.value === 'merchants' ? '' : 'none';
+        syncActiveSubTypeRequired();
     });
 </script>

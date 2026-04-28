@@ -216,19 +216,11 @@ public class BtcMapService
             UnlistFromOsm = true
         };
 
-        try
-        {
-            await _apiClient.SubmitAsync(request);
-        }
-        catch (PluginBuilderApiException ex)
-        {
-            _logger.LogWarning(ex, "API unlist call failed for store {StoreId}, proceeding with local unlist", storeId);
-        }
+        await _apiClient.SubmitAsync(request);
 
         await using var ctx = _dbContextFactory.CreateContext();
         var dbListing = await ctx.Listings.FirstAsync(l => l.Id == listing.Id);
         dbListing.Status = ListingStatus.Unlisted;
-        // Clear all directory state so a future re-list doesn't inherit stale data.
         dbListing.Url = null;
         dbListing.Description = null;
         dbListing.Twitter = null;
@@ -271,6 +263,7 @@ public class BtcMapService
 
     public async Task<BtcMapSubmitResponse> SubmitToDirectoryOnly(BtcMapListing listing, BtcMapStoreSettings settings)
     {
+        var country = !string.IsNullOrEmpty(settings.Country) ? settings.Country : listing.Country;
         var request = new BtcMapSubmitRequest
         {
             Name = listing.BusinessName,
@@ -278,7 +271,7 @@ public class BtcMapService
             Description = settings.DirectoryDescription,
             Type = settings.DirectoryType,
             SubType = settings.DirectorySubType,
-            Country = listing.Country,
+            Country = country,
             Twitter = settings.DirectoryTwitter,
             Github = settings.DirectoryGithub,
             OnionUrl = settings.DirectoryOnionUrl,
@@ -294,8 +287,7 @@ public class BtcMapService
             dbListing.DirectorySubmittedAt = DateTimeOffset.UtcNow;
             dbListing.DirectorySubmittedUrl = listing.Url;
             dbListing.DirectoryPrUrl = response.Directory.PrUrl;
-            // Persist the directory-specific fields submitted by the merchant so
-            // the active listing pre-fills future re-submissions.
+            dbListing.Country = country;
             dbListing.Description = settings.DirectoryDescription;
             dbListing.Twitter = settings.DirectoryTwitter;
             dbListing.Github = settings.DirectoryGithub;
@@ -306,12 +298,11 @@ public class BtcMapService
         }
         else if (response.Directory?.Skipped?.StartsWith("duplicate-url:") == true)
         {
-            // URL already in merchants.json — record submission state so the
-            // merchants.json check on next page load surfaces the merged banner.
             await using var ctx = _dbContextFactory.CreateContext();
             var dbListing = await ctx.Listings.FirstAsync(l => l.Id == listing.Id);
             dbListing.DirectorySubmittedAt = DateTimeOffset.UtcNow;
             dbListing.DirectorySubmittedUrl = listing.Url;
+            dbListing.Country = country;
             dbListing.Description = settings.DirectoryDescription;
             dbListing.Twitter = settings.DirectoryTwitter;
             dbListing.Github = settings.DirectoryGithub;

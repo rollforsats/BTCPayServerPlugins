@@ -139,7 +139,7 @@
                             }
                             <form method="post" asp-action="LinkExisting" asp-route-storeId="@storeId" class="flex-shrink-0">
                                 @Html.AntiForgeryToken()
-                                <input type="hidden" name="BusinessName" value="@elementName" />
+                                <input type="hidden" name="BusinessName" value="@Model.Settings.BusinessName" />
                                 <input type="hidden" name="Category" value="@elCategory" />
                                 <input type="hidden" name="Latitude" value="@elLat" />
                                 <input type="hidden" name="Longitude" value="@elLon" />
