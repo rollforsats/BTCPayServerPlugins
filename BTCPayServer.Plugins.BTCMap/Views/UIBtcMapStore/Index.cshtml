@@ -251,8 +251,13 @@
                         <input asp-for="Settings.PostCode" class="form-control" />
                     </div>
                     <div class="col-md-4">
-                        <label asp-for="Settings.Country" class="form-label">Country Code</label>
-                        <input asp-for="Settings.Country" class="form-control" placeholder="e.g., US, DE, JP" maxlength="2" />
+                        <label asp-for="Settings.Country" class="form-label">
+                            Country Code <span id="Settings_Country_required" class="text-danger" style="display: none;">*</span>
+                        </label>
+                        <select asp-for="Settings.Country" class="form-select"
+                                asp-items="@IsoCountries.SelectListItems">
+                            <option value="">— Select country —</option>
+                        </select>
                     </div>
                     <div class="col-md-4 d-flex align-items-end">
                         <button type="button" class="btn btn-outline-secondary w-100" id="geocodeBtn">
@@ -389,6 +394,8 @@
         // Country is in the address section but required for directory submissions
         const countryEl = document.getElementById('Settings_Country');
         if (countryEl) countryEl.required = checked;
+        const countryAsterisk = document.getElementById('Settings_Country_required');
+        if (countryAsterisk) countryAsterisk.style.display = checked ? '' : 'none';
     }
     dirCheckbox?.addEventListener('change', toggleDirectoryFields);
     toggleDirectoryFields();
