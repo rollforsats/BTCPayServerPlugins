@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using BTCPayServer.Plugins.BTCMap.Models;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace BTCPayServer.Plugins.BTCMap.Services;
@@ -29,26 +30,35 @@ public class PluginBuilderApiClient
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    private readonly HttpClient _httpClient;
+    private readonly IServiceProvider _services;
     private readonly ILogger<PluginBuilderApiClient> _logger;
 
+    // Resolve PluginBuilderClient per call rather than capturing its HttpClient in the
+    // constructor. PluginBuilderClient is registered via AddHttpClient<T> and reads
+    // PoliciesSettings.PluginSource per resolution; a captured HttpClient pins the
+    // BaseAddress to whatever PluginSource was at first resolution and defeats the
+    // factory's HttpMessageHandler rotation.
     public PluginBuilderApiClient(
-        BTCPayServer.Plugins.PluginBuilderClient pluginBuilderClient,
+        IServiceProvider services,
         ILogger<PluginBuilderApiClient> logger)
     {
-        _httpClient = pluginBuilderClient.HttpClient;
+        _services = services;
         _logger = logger;
     }
 
     public async Task<BtcMapSubmitResponse> SubmitAsync(BtcMapSubmitRequest request)
     {
+        using var scope = _services.CreateScope();
+        var httpClient = scope.ServiceProvider
+            .GetRequiredService<BTCPayServer.Plugins.PluginBuilderClient>().HttpClient;
+
         var json = JsonSerializer.Serialize(request, JsonOptions);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         HttpResponseMessage response;
         try
         {
-            response = await _httpClient.PostAsync("/apis/btcmaps/v1/submit", content);
+            response = await httpClient.PostAsync("/apis/btcmaps/v1/submit", content);
         }
         catch (Exception ex)
         {

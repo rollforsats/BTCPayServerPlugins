@@ -13,7 +13,6 @@
 
     string latStr = Model.Settings.Latitude?.ToString(inv) ?? "";
     string lonStr = Model.Settings.Longitude?.ToString(inv) ?? "";
-    string lightningStr = Model.Settings.AcceptsLightning ? "true" : "false";
 
     string[] categoryKeys = { "amenity", "shop", "tourism", "office", "craft" };
     string[] addressOrder = { "addr:city", "addr:postcode", "addr:country" };
@@ -149,7 +148,6 @@
                                 <input type="hidden" name="City" value="@elCity" />
                                 <input type="hidden" name="PostCode" value="@elPostCode" />
                                 <input type="hidden" name="Country" value="@elCountry" />
-                                <input type="hidden" name="AcceptsLightning" value="@lightningStr" />
                                 <input type="hidden" name="Url" value="@Model.Settings.Url" />
                                 <input type="hidden" name="DirectoryDescription" value="@Model.Settings.DirectoryDescription" />
                                 <input type="hidden" name="DirectoryTwitter" value="@Model.Settings.DirectoryTwitter" />

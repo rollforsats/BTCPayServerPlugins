@@ -115,77 +115,53 @@ public class BtcMapService
             DirectorySubType = submitToDirectory ? settings.DirectorySubType : null
         };
 
+        // Single context: stage the row in memory, call the API, apply API-derived
+        // fields, then commit once. If the API call throws, SaveChangesAsync never
+        // runs, so no orphan Pending row gets persisted.
         await using var ctx = _dbContextFactory.CreateContext();
         var existing = await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId);
         if (existing != null)
             ctx.Listings.Remove(existing);
         ctx.Listings.Add(listing);
+
+        var response = await _apiClient.SubmitAsync(request);
+
+        if (response.Osm?.Skipped != null)
+        {
+            _logger.LogWarning("OSM leg skipped: {Reason}", response.Osm.Skipped);
+        }
+        else if (response.Osm != null && response.Osm.NodeId.HasValue)
+        {
+            listing.OsmElementId = response.Osm.NodeId.Value;
+            listing.OsmElementType = response.Osm.NodeType ?? listing.OsmElementType;
+            listing.OsmElementVersion = response.Osm.NewVersion ?? 1;
+        }
+        listing.Status = ListingStatus.Active;
+
+        if (response.Directory != null)
+        {
+            if (response.Directory.PrUrl != null)
+            {
+                listing.DirectorySubmittedAt = DateTimeOffset.UtcNow;
+                listing.DirectorySubmittedUrl = settings.Url;
+                listing.DirectoryPrUrl = response.Directory.PrUrl;
+            }
+            else if (response.Directory.Skipped?.StartsWith("duplicate-url:") == true)
+            {
+                // URL already merged in merchants.json — track as submitted so the
+                // merchants.json page-load check surfaces the merged banner.
+                listing.DirectorySubmittedAt = DateTimeOffset.UtcNow;
+                listing.DirectorySubmittedUrl = settings.Url;
+                _logger.LogInformation("Directory submission skipped (already merged): {Reason}", response.Directory.Skipped);
+            }
+            else if (response.Directory.Skipped != null)
+            {
+                _logger.LogInformation("Directory submission skipped: {Reason}", response.Directory.Skipped);
+            }
+        }
+
         await ctx.SaveChangesAsync();
-
-        try
-        {
-            var response = await _apiClient.SubmitAsync(request);
-
-            if (response.Osm?.Skipped != null)
-            {
-                _logger.LogWarning("OSM leg skipped: {Reason}", response.Osm.Skipped);
-            }
-            else if (response.Osm != null && response.Osm.NodeId.HasValue)
-            {
-                listing.OsmElementId = response.Osm.NodeId.Value;
-                listing.OsmElementType = response.Osm.NodeType ?? listing.OsmElementType;
-                listing.OsmElementVersion = response.Osm.NewVersion ?? 1;
-            }
-            listing.Status = ListingStatus.Active;
-
-            if (response.Directory != null)
-            {
-                if (response.Directory.PrUrl != null)
-                {
-                    listing.DirectorySubmittedAt = DateTimeOffset.UtcNow;
-                    listing.DirectorySubmittedUrl = settings.Url;
-                    listing.DirectoryPrUrl = response.Directory.PrUrl;
-                }
-                else if (response.Directory.Skipped?.StartsWith("duplicate-url:") == true)
-                {
-                    // URL already merged in merchants.json — track as submitted so the
-                    // merchants.json page-load check surfaces the merged banner.
-                    listing.DirectorySubmittedAt = DateTimeOffset.UtcNow;
-                    listing.DirectorySubmittedUrl = settings.Url;
-                    _logger.LogInformation("Directory submission skipped (already merged): {Reason}", response.Directory.Skipped);
-                }
-                else if (response.Directory.Skipped != null)
-                {
-                    _logger.LogInformation("Directory submission skipped: {Reason}", response.Directory.Skipped);
-                }
-            }
-
-            await using var updateCtx = _dbContextFactory.CreateContext();
-            var dbListing = await updateCtx.Listings.FirstAsync(l => l.Id == listing.Id);
-            dbListing.OsmElementId = listing.OsmElementId;
-            dbListing.OsmElementType = listing.OsmElementType;
-            dbListing.OsmElementVersion = listing.OsmElementVersion;
-            dbListing.Status = ListingStatus.Active;
-            dbListing.DirectorySubmittedAt = listing.DirectorySubmittedAt;
-            dbListing.DirectorySubmittedUrl = listing.DirectorySubmittedUrl;
-            dbListing.DirectoryPrUrl = listing.DirectoryPrUrl;
-            await updateCtx.SaveChangesAsync();
-
-            return listing;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "API submission failed for pending listing {ListingId}, store {StoreId}",
-                listing.Id, storeId);
-            await using var cleanupCtx = _dbContextFactory.CreateContext();
-            var pending = await cleanupCtx.Listings.FirstOrDefaultAsync(l => l.Id == listing.Id);
-            if (pending != null)
-            {
-                cleanupCtx.Listings.Remove(pending);
-                await cleanupCtx.SaveChangesAsync();
-            }
-            throw;
-        }
+        return listing;
     }
 
     public async Task UpdateListing(BtcMapListing listing, BtcMapStoreSettings settings, bool acceptsLightning)

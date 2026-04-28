@@ -122,7 +122,6 @@ public class UIBtcMapStoreController : Controller
                 City = listing.City,
                 PostCode = listing.PostCode,
                 Country = listing.Country,
-                AcceptsLightning = listing.AcceptsLightning,
                 Url = listing.Url ?? storeData?.StoreWebsite,
                 DirectoryDescription = listing.Description,
                 DirectoryTwitter = listing.Twitter,
@@ -134,11 +133,9 @@ public class UIBtcMapStoreController : Controller
         }
         else if (storeData != null)
         {
-            var enabledIds = storeData.GetEnabledPaymentIds().Select(p => p.ToString()).ToArray();
             vm.Settings = new BtcMapStoreSettings
             {
                 BusinessName = storeData.StoreName,
-                AcceptsLightning = enabledIds.Any(id => string.Equals(id, "BTC-LN", StringComparison.OrdinalIgnoreCase)),
                 Url = storeData.StoreWebsite
             };
         }

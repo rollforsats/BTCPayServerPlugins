@@ -29,8 +29,10 @@ public class BtcMapSubmitRequest
     public bool SubmitToDirectory { get; set; }
     public bool TagOnOsm { get; set; }
 
-    // Auto-detected from store's enabled payment methods
-    public bool AcceptsLightning { get; set; } = true;
+    // Auto-detected from store's enabled payment methods. Defaults to false so a
+    // missing assignment can't silently advertise Lightning on a store that doesn't
+    // accept it; the upstream service writes payment:lightning=yes only when true.
+    public bool AcceptsLightning { get; set; }
 
     // Remove bitcoin-related tags from an existing OSM element.
     // Mutually exclusive with TagOnOsm and SubmitToDirectory.
