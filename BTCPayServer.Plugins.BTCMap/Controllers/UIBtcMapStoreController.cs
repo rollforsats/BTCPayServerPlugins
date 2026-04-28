@@ -51,6 +51,21 @@ public class UIBtcMapStoreController : Controller
             .Any(id => string.Equals(id, "BTC-LN", StringComparison.OrdinalIgnoreCase));
     }
 
+    private static string NormalizeUrl(string input, string defaultScheme)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return input;
+        var trimmed = input.Trim();
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out _)) return trimmed;
+        return $"{defaultScheme}://{trimmed}";
+    }
+
+    private static void NormalizeUrls(BtcMapStoreSettings model)
+    {
+        model.Url = NormalizeUrl(model.Url, "https");
+        model.DirectoryGithub = NormalizeUrl(model.DirectoryGithub, "https");
+        model.DirectoryOnionUrl = NormalizeUrl(model.DirectoryOnionUrl, "http");
+    }
+
     private async Task<BtcMapListingViewModel> BuildViewModel(string storeId, BtcMapStoreSettings settings = null)
     {
         await PluginMigrationRunner.WaitForMigration;
@@ -155,6 +170,8 @@ public class UIBtcMapStoreController : Controller
         if (!ModelState.IsValid)
             return View("Index", await BuildViewModel(storeId, model));
 
+        NormalizeUrls(model);
+
         try
         {
             var duplicates = await _btcMapService.CheckDuplicates(model.Latitude.Value, model.Longitude.Value);
@@ -201,6 +218,8 @@ public class UIBtcMapStoreController : Controller
             return RedirectToAction(nameof(Index), new { storeId });
         }
 
+        NormalizeUrls(model);
+
         try
         {
             var acceptsLightning = StoreAcceptsLightning();
@@ -235,6 +254,8 @@ public class UIBtcMapStoreController : Controller
             TempData["StatusMessage"] = "Error: Please fill in all required fields.";
             return RedirectToAction(nameof(Index), new { storeId });
         }
+
+        NormalizeUrls(model);
 
         try
         {
@@ -274,6 +295,8 @@ public class UIBtcMapStoreController : Controller
             TempData["StatusMessage"] = "Error: No listing found for this store.";
             return RedirectToAction(nameof(Index), new { storeId });
         }
+
+        NormalizeUrls(model);
 
         try
         {
@@ -325,6 +348,8 @@ public class UIBtcMapStoreController : Controller
             TempData["StatusMessage"] = "Error: No active listing found.";
             return RedirectToAction(nameof(Index), new { storeId });
         }
+
+        NormalizeUrls(model);
 
         try
         {
