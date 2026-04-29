@@ -109,13 +109,13 @@ public class UIBtcMapStoreController : Controller
                 {
                     verifiedAt = ageOverride switch
                     {
-                        "expiring" => DateTimeOffset.UtcNow.AddDays(-320),
-                        "expired" => DateTimeOffset.UtcNow.AddMonths(-12),
+                        "expiring" => DateTimeOffset.UtcNow.AddMonths(-12).AddDays(15),
+                        "expired" => DateTimeOffset.UtcNow.AddMonths(-13),
                         _ => verifiedAt
                     };
                 }
 
-                var expiresAt = verifiedAt.AddMonths(11);
+                var expiresAt = verifiedAt.AddMonths(12);
                 vm.DaysUntilVerificationExpires = (int)(expiresAt - DateTimeOffset.UtcNow).TotalDays;
             }
         }
