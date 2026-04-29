@@ -105,8 +105,9 @@
                     @Html.AntiForgeryToken()
                     <div class="form-group mb-3">
                         <label class="form-label">Description <span class="text-danger">*</span></label>
-                        <textarea name="Settings.DirectoryDescription" class="form-control" rows="3" maxlength="180"
+                        <textarea name="Settings.DirectoryDescription" id="active_dir_Description" class="form-control" rows="3" maxlength="180"
                                   placeholder="Brief description of your business..." required>@Model.Settings.DirectoryDescription</textarea>
+                        <div class="form-text"><span id="active_dir_charCount">@(Model.Settings.DirectoryDescription?.Length ?? 0)</span>/180 characters</div>
                     </div>
                     <div class="form-group mb-3">
                         <label class="form-label">Twitter / X</label>
@@ -433,6 +434,9 @@
     // Character counter
     document.getElementById('Settings_DirectoryDescription')?.addEventListener('input', function() {
         document.getElementById('dir_charCount').textContent = this.value.length;
+    });
+    document.getElementById('active_dir_Description')?.addEventListener('input', function() {
+        document.getElementById('active_dir_charCount').textContent = this.value.length;
     });
 
     // Active listing directory type/subtype toggle

@@ -65,6 +65,14 @@ public class BtcMapService
         bool acceptsLightning, bool submitToDirectory,
         string osmType = null, long? osmId = null)
     {
+        var hasOsmType = !string.IsNullOrWhiteSpace(osmType);
+        if (osmId.HasValue != hasOsmType)
+            throw new ArgumentException("osmId and osmType must be provided together when linking an existing OSM element.");
+        if (hasOsmType && osmType is not ("node" or "way"))
+            throw new ArgumentOutOfRangeException(nameof(osmType), "Only 'node' and 'way' are supported.");
+        if (osmId is <= 0)
+            throw new ArgumentOutOfRangeException(nameof(osmId), "osmId must be positive when linking an existing element.");
+
         var request = new BtcMapSubmitRequest
         {
             Name = settings.BusinessName,
@@ -136,7 +144,13 @@ public class BtcMapService
             listing.OsmElementType = response.Osm.NodeType ?? listing.OsmElementType;
             listing.OsmElementVersion = response.Osm.NewVersion ?? 1;
         }
-        listing.Status = ListingStatus.Active;
+
+        // Don't mark a brand-new listing Active when no OSM element was created — that
+        // would persist a row with OsmElementId = 0 and no confirmed remote object.
+        // Link-existing (osmId != null) is OK to mark Active even on a skip: the
+        // element exists upstream regardless of whether this tag-write succeeded.
+        var hasOsmElement = osmId.HasValue || response.Osm?.NodeId.HasValue == true;
+        listing.Status = hasOsmElement ? ListingStatus.Active : ListingStatus.Pending;
 
         if (response.Directory != null)
         {
