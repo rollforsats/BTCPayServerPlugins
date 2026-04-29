@@ -66,13 +66,8 @@ public class UIBtcMapStoreController : Controller
         model.DirectoryOnionUrl = NormalizeUrl(model.DirectoryOnionUrl, "http");
     }
 
-    // SubmitListing can return Status=Pending when the OSM leg was skipped on the
-    // create path; reflect that to the merchant rather than always claiming success.
     private static string BuildSubmissionStatusMessage(BtcMapListing listing, bool submitToDirectory, bool isLink)
     {
-        if (listing.Status == ListingStatus.Pending)
-            return "Your submission was received, but BTC Map has not confirmed the OSM listing yet. Check back shortly or contact support if this state persists.";
-
         if (submitToDirectory && listing.DirectorySubmittedAt.HasValue)
             return isLink
                 ? "Your store has been linked on BTC Map and submitted to the BTCPay Server Directory."
@@ -133,7 +128,10 @@ public class UIBtcMapStoreController : Controller
                 }
 
                 var expiresAt = verifiedAt.AddMonths(12);
-                vm.DaysUntilVerificationExpires = (int)(expiresAt - DateTimeOffset.UtcNow).TotalDays;
+                var remaining = expiresAt - DateTimeOffset.UtcNow;
+                vm.DaysUntilVerificationExpires = remaining <= TimeSpan.Zero
+                    ? 0
+                    : (int)Math.Ceiling(remaining.TotalDays);
             }
         }
 

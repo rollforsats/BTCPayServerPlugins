@@ -31,7 +31,7 @@ public class BtcMapService
     public async Task<BtcMapListing> GetListingForStore(string storeId)
     {
         await using var ctx = _dbContextFactory.CreateContext();
-        return await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId);
+        return await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId && l.Status != ListingStatus.Pending);
     }
 
     public async Task<List<OverpassElement>> SearchNearby(double lat, double lon, string name,
@@ -134,23 +134,20 @@ public class BtcMapService
 
         var response = await _apiClient.SubmitAsync(request);
 
+        // Upstream's only OSM-leg skip on a healthy server is `osm-access-token-not-configured` —
+        // an operator config error, not a merchant-facing outcome. Surface as an error so the
+        // merchant sees the truth and the operator gets paged; nothing persists locally.
         if (response.Osm?.Skipped != null)
-        {
-            _logger.LogWarning("OSM leg skipped: {Reason}", response.Osm.Skipped);
-        }
-        else if (response.Osm != null && response.Osm.NodeId.HasValue)
+            throw new PluginBuilderApiException(503,
+                $"BTC Map service is unavailable (OSM leg skipped: {response.Osm.Skipped}). Please contact your administrator.");
+
+        if (response.Osm != null && response.Osm.NodeId.HasValue)
         {
             listing.OsmElementId = response.Osm.NodeId.Value;
             listing.OsmElementType = response.Osm.NodeType ?? listing.OsmElementType;
             listing.OsmElementVersion = response.Osm.NewVersion ?? 1;
         }
-
-        // Don't mark a brand-new listing Active when no OSM element was created — that
-        // would persist a row with OsmElementId = 0 and no confirmed remote object.
-        // Link-existing (osmId != null) is OK to mark Active even on a skip: the
-        // element exists upstream regardless of whether this tag-write succeeded.
-        var hasOsmElement = osmId.HasValue || response.Osm?.NodeId.HasValue == true;
-        listing.Status = hasOsmElement ? ListingStatus.Active : ListingStatus.Pending;
+        listing.Status = ListingStatus.Active;
 
         if (response.Directory != null)
         {
