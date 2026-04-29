@@ -66,6 +66,23 @@ public class UIBtcMapStoreController : Controller
         model.DirectoryOnionUrl = NormalizeUrl(model.DirectoryOnionUrl, "http");
     }
 
+    // SubmitListing can return Status=Pending when the OSM leg was skipped on the
+    // create path; reflect that to the merchant rather than always claiming success.
+    private static string BuildSubmissionStatusMessage(BtcMapListing listing, bool submitToDirectory, bool isLink)
+    {
+        if (listing.Status == ListingStatus.Pending)
+            return "Your submission was received, but BTC Map has not confirmed the OSM listing yet. Check back shortly or contact support if this state persists.";
+
+        if (submitToDirectory && listing.DirectorySubmittedAt.HasValue)
+            return isLink
+                ? "Your store has been linked on BTC Map and submitted to the BTCPay Server Directory."
+                : "Your business has been listed on BTC Map and submitted to the BTCPay Server Directory.";
+
+        return isLink
+            ? "Your store has been linked on BTC Map. It may take up to 10 minutes for changes to appear."
+            : "Your business has been listed on BTC Map! It may take up to 10 minutes to appear.";
+    }
+
     private async Task<BtcMapListingViewModel> BuildViewModel(string storeId, BtcMapStoreSettings settings = null)
     {
         await PluginMigrationRunner.WaitForMigration;
@@ -223,10 +240,8 @@ public class UIBtcMapStoreController : Controller
         try
         {
             var acceptsLightning = StoreAcceptsLightning();
-            await _btcMapService.SubmitListing(storeId, model, acceptsLightning, submitToDirectory, osmType, osmId);
-            TempData["StatusMessage"] = submitToDirectory
-                ? "Your store has been linked on BTC Map and submitted to the BTCPay Directory."
-                : "Your store has been linked on BTC Map. It may take up to 10 minutes for changes to appear.";
+            var listing = await _btcMapService.SubmitListing(storeId, model, acceptsLightning, submitToDirectory, osmType, osmId);
+            TempData["StatusMessage"] = BuildSubmissionStatusMessage(listing, submitToDirectory, isLink: true);
             return RedirectToAction(nameof(Index), new { storeId });
         }
         catch (PluginBuilderApiException ex)
@@ -260,8 +275,8 @@ public class UIBtcMapStoreController : Controller
         try
         {
             var acceptsLightning = StoreAcceptsLightning();
-            await _btcMapService.SubmitListing(storeId, model, acceptsLightning, submitToDirectory);
-            TempData["StatusMessage"] = "Your business has been listed on BTC Map! It may take up to 10 minutes to appear.";
+            var listing = await _btcMapService.SubmitListing(storeId, model, acceptsLightning, submitToDirectory);
+            TempData["StatusMessage"] = BuildSubmissionStatusMessage(listing, submitToDirectory, isLink: false);
             return RedirectToAction(nameof(Index), new { storeId });
         }
         catch (PluginBuilderApiException ex)

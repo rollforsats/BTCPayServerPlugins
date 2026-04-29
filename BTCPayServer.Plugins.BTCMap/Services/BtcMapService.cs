@@ -31,7 +31,7 @@ public class BtcMapService
     public async Task<BtcMapListing> GetListingForStore(string storeId)
     {
         await using var ctx = _dbContextFactory.CreateContext();
-        return await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId && l.Status != ListingStatus.Pending);
+        return await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId);
     }
 
     public async Task<List<OverpassElement>> SearchNearby(double lat, double lon, string name,

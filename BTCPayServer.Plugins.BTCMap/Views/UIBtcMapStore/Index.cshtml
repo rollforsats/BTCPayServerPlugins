@@ -182,6 +182,28 @@
                 </button>
             </form>
         }
+        else if (Model.ExistingListing != null && Model.ExistingListing.Status == ListingStatus.Pending)
+        {
+            <div class="alert alert-warning">
+                <h5 class="alert-heading">Submission pending</h5>
+                <p class="mb-2">
+                    BTC Map has not confirmed your OSM listing yet. This usually means the OSM
+                    tag-write step was skipped or failed. Your submission record is saved; please
+                    check back shortly or contact support if this state persists.
+                </p>
+                @if (Model.ExistingListing.DirectorySubmittedAt.HasValue)
+                {
+                    <p class="mb-0">
+                        Your BTCPay Server Directory submission was recorded
+                        @if (!string.IsNullOrEmpty(Model.ExistingListing.DirectoryPrUrl))
+                        {
+                            <text>(<a href="@Model.ExistingListing.DirectoryPrUrl" class="alert-link" target="_blank" rel="noopener noreferrer">view PR</a>)</text>
+                        }
+                        .
+                    </p>
+                }
+            </div>
+        }
         else
         {
             <form method="post" asp-action="Search" asp-route-storeId="@storeId">
@@ -401,10 +423,11 @@
             if (el) el.required = checked;
         });
         const subTypeEl = document.getElementById('Settings_DirectorySubType');
-        if (subTypeEl) {
-            const directoryType = document.getElementById('dir_Type')?.value ?? 'merchants';
-            subTypeEl.required = checked && directoryType === 'merchants';
-        }
+        const dirType = document.getElementById('dir_Type');
+        const subTypeGroup = document.getElementById('dir_subTypeGroup');
+        const directoryType = dirType?.value ?? 'merchants';
+        if (subTypeEl) subTypeEl.required = checked && directoryType === 'merchants';
+        if (subTypeGroup) subTypeGroup.style.display = directoryType === 'merchants' ? '' : 'none';
         const countryEl = document.getElementById('Settings_Country');
         if (countryEl) countryEl.required = checked;
         const countryAsterisk = document.getElementById('Settings_Country_required');
@@ -418,8 +441,12 @@
     function syncActiveSubTypeRequired() {
         const subTypeEl = document.getElementById('Settings_DirectorySubType');
         const activeType = document.getElementById('active_dir_Type');
+        const activeSubTypeGroup = document.getElementById('active_dir_subTypeGroup');
         if (subTypeEl && activeType) {
             subTypeEl.required = activeType.value === 'merchants';
+        }
+        if (activeType && activeSubTypeGroup) {
+            activeSubTypeGroup.style.display = activeType.value === 'merchants' ? '' : 'none';
         }
     }
     syncActiveSubTypeRequired();
