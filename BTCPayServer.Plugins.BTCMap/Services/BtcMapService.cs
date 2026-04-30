@@ -181,6 +181,9 @@ public class BtcMapService
         {
             Name = settings.BusinessName,
             Url = settings.Url,
+            // Reverify-only path: OSM tags don't carry description, so the stored value
+            // is sent purely to satisfy the request shape. Form edits to DirectoryDescription
+            // flow through SubmitListing's directory leg, not here.
             Description = listing.Description,
             OsmNodeId = listing.OsmElementId,
             OsmNodeType = listing.OsmElementType,

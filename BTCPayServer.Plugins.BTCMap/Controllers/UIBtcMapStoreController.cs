@@ -42,6 +42,9 @@ public class UIBtcMapStoreController : Controller
 
     private bool IsMainnet => _networkProvider.NetworkType == ChainName.Mainnet;
 
+    // BTC-LN is BTCPay's canonical Lightning paymentId; LNURL/BOLT12 reuse it
+    // rather than registering distinct top-level IDs, so this gate stays correct
+    // as Lightning protocols evolve.
     private bool StoreAcceptsLightning()
     {
         var storeData = HttpContext.GetStoreData();

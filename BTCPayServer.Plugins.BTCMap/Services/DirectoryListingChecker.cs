@@ -42,11 +42,14 @@ public class DirectoryListingChecker
                 entry.AbsoluteExpirationRelativeToNow = CacheDuration;
 
                 var client = _httpClientFactory.CreateClient("DirectoryRawApi");
-                var response = await client.GetAsync(MerchantsJsonUrl);
+                using var response = await client.GetAsync(MerchantsJsonUrl);
+                // Don't pin a failure to the full 5min cache window, but do hold it
+                // briefly so a single page load doesn't fan out into N upstream calls.
+                // Non-positive AbsoluteExpirationRelativeToNow throws on .NET 8.
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("merchants.json fetch failed with status {Status}", (int)response.StatusCode);
-                    entry.AbsoluteExpirationRelativeToNow = TimeSpan.Zero;
+                    entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(1);
                     return null;
                 }
 
@@ -56,7 +59,7 @@ public class DirectoryListingChecker
                 if (deserialized == null)
                 {
                     _logger.LogWarning("merchants.json deserialized to null");
-                    entry.AbsoluteExpirationRelativeToNow = TimeSpan.Zero;
+                    entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(1);
                 }
                 return deserialized;
             });
