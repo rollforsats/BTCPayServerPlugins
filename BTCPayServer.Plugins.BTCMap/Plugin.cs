@@ -6,6 +6,7 @@ using BTCPayServer.Plugins.BTCMap.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using NBitcoin;
 
 namespace BTCPayServer.Plugins.BTCMap;
 
@@ -32,28 +33,25 @@ public class Plugin : BaseBTCPayServerPlugin
 
         // Services
         services.AddSingleton<BtcMapService>();
-        services.AddSingleton<OsmAuthService>();
-        services.AddSingleton<OsmApiClient>();
+        services.AddSingleton<PluginBuilderApiClient>();
+        services.AddSingleton<DirectoryListingChecker>();
         services.AddSingleton<OverpassApiClient>();
         services.AddSingleton<NominatimApiClient>();
-        services.AddSingleton<DirectoryService>();
 
         // IOverpassApiClient binding — dev fixture mode when BTCMAP_OVERPASS_SCENARIO is
         // set on non-mainnet Development builds, otherwise the real OverpassApiClient.
-        // Gate is checked lazily on first resolution so startup fails loudly if the env
-        // var leaks into a Production or mainnet deployment.
         var scenarioName = Environment.GetEnvironmentVariable("BTCMAP_OVERPASS_SCENARIO");
         if (!string.IsNullOrWhiteSpace(scenarioName))
         {
             services.AddSingleton<IOverpassApiClient>(sp =>
             {
                 var env = sp.GetRequiredService<IHostEnvironment>();
-                var auth = sp.GetRequiredService<OsmAuthService>();
+                var networkProvider = sp.GetRequiredService<BTCPayNetworkProvider>();
 
                 if (!env.IsDevelopment())
                     throw new InvalidOperationException(
                         $"BTCMAP_OVERPASS_SCENARIO='{scenarioName}' refused: ASPNETCORE_ENVIRONMENT is not Development");
-                if (auth.IsMainnet)
+                if (networkProvider.NetworkType == ChainName.Mainnet)
                     throw new InvalidOperationException(
                         $"BTCMAP_OVERPASS_SCENARIO='{scenarioName}' refused: running on mainnet");
 
@@ -70,11 +68,6 @@ public class Plugin : BaseBTCPayServerPlugin
         }
 
         // Named HTTP clients
-        services.AddHttpClient("OsmApi", client =>
-        {
-            client.DefaultRequestHeaders.Add("User-Agent", "BTCPayServer-BtcMap-Plugin/1.0");
-            client.Timeout = TimeSpan.FromSeconds(20);
-        });
         services.AddHttpClient("OverpassApi", client =>
         {
             client.BaseAddress = new Uri("https://overpass-api.de/");
@@ -87,7 +80,7 @@ public class Plugin : BaseBTCPayServerPlugin
             client.DefaultRequestHeaders.Add("User-Agent", "BTCPayServer-BtcMap-Plugin/1.0");
             client.Timeout = TimeSpan.FromSeconds(20);
         });
-        services.AddHttpClient("DirectoryApi", client =>
+        services.AddHttpClient("DirectoryRawApi", client =>
         {
             client.BaseAddress = new Uri("https://raw.githubusercontent.com/");
             client.DefaultRequestHeaders.Add("User-Agent", "BTCPayServer-BtcMap-Plugin/1.0");

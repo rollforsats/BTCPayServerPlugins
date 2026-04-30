@@ -13,8 +13,6 @@
 
     string latStr = Model.Settings.Latitude?.ToString(inv) ?? "";
     string lonStr = Model.Settings.Longitude?.ToString(inv) ?? "";
-    string onchainStr = Model.Settings.AcceptsOnchain ? "true" : "false";
-    string lightningStr = Model.Settings.AcceptsLightning ? "true" : "false";
 
     string[] categoryKeys = { "amenity", "shop", "tourism", "office", "craft" };
     string[] addressOrder = { "addr:city", "addr:postcode", "addr:country" };
@@ -73,7 +71,7 @@
 
         @if (Model.SearchResults != null && Model.SearchResults.Count > 0)
         {
-            <p>We found existing locations near your coordinates. If your business is already on OpenStreetMap, link to it below — even if it already has Bitcoin tags, linking associates it with your BTCPay store for future updates and reverification.</p>
+            <p>We found existing locations near your coordinates. If your business is already on the map, select it below.</p>
 
             <div class="list-group mb-4">
                 @foreach (var element in Model.SearchResults)
@@ -121,7 +119,7 @@
                                 @if (hasBtc)
                                 {
                                     <div class="mt-2">
-                                        <span class="badge bg-warning text-dark">Already has Bitcoin tags</span>
+                                        <span class="badge bg-warning text-dark">Already on BTC Map</span>
                                         @if (existingBitcoinTags.Count > 0)
                                         {
                                             <div class="small text-muted mt-1">@string.Join("  ", existingBitcoinTags)</div>
@@ -130,41 +128,46 @@
                                 }
                             </div>
                             @{
-                                    var elLat = element.EffectiveLat?.ToString(inv) ?? latStr;
-                                    var elLon = element.EffectiveLon?.ToString(inv) ?? lonStr;
-                                    tags.TryGetValue("addr:street", out var elStreet);
-                                    var elStreetFull = elStreet ?? "";
-                                    if (tags.TryGetValue("addr:housenumber", out var elHn) && !string.IsNullOrWhiteSpace(elStreet))
-                                        elStreetFull = elHn + " " + elStreet;
-                                    tags.TryGetValue("addr:city", out var elCity);
-                                    tags.TryGetValue("addr:postcode", out var elPostCode);
-                                    tags.TryGetValue("addr:country", out var elCountry);
-                                    var elCategory = category.HasValue ? category.Value.Value : Model.Settings.Category;
-                                }
-                                <form method="post" asp-action="LinkExisting" asp-route-storeId="@storeId" class="flex-shrink-0">
+                                var elLat = element.EffectiveLat?.ToString(inv) ?? latStr;
+                                var elLon = element.EffectiveLon?.ToString(inv) ?? lonStr;
+                                tags.TryGetValue("addr:street", out var elStreet);
+                                tags.TryGetValue("addr:housenumber", out var elHn);
+                                tags.TryGetValue("addr:city", out var elCity);
+                                tags.TryGetValue("addr:postcode", out var elPostCode);
+                                tags.TryGetValue("addr:country", out var elCountry);
+                                var elCategory = category.HasValue ? category.Value.Value : Model.Settings.Category;
+                            }
+                            <form method="post" asp-action="LinkExisting" asp-route-storeId="@storeId" class="flex-shrink-0">
                                 @Html.AntiForgeryToken()
-                                <input type="hidden" name="BusinessName" value="@elementName" />
+                                <input type="hidden" name="BusinessName" value="@Model.Settings.BusinessName" />
                                 <input type="hidden" name="Category" value="@elCategory" />
                                 <input type="hidden" name="Latitude" value="@elLat" />
                                 <input type="hidden" name="Longitude" value="@elLon" />
-                                <input type="hidden" name="Street" value="@elStreetFull" />
+                                <input type="hidden" name="HouseNumber" value="@elHn" />
+                                <input type="hidden" name="Street" value="@elStreet" />
                                 <input type="hidden" name="City" value="@elCity" />
                                 <input type="hidden" name="PostCode" value="@elPostCode" />
                                 <input type="hidden" name="Country" value="@elCountry" />
-                                <input type="hidden" name="AcceptsOnchain" value="@onchainStr" />
-                                <input type="hidden" name="AcceptsLightning" value="@lightningStr" />
+                                <input type="hidden" name="Url" value="@Model.Settings.Url" />
+                                <input type="hidden" name="DirectoryDescription" value="@Model.Settings.DirectoryDescription" />
+                                <input type="hidden" name="DirectoryTwitter" value="@Model.Settings.DirectoryTwitter" />
+                                <input type="hidden" name="DirectoryType" value="@Model.Settings.DirectoryType" />
+                                <input type="hidden" name="DirectorySubType" value="@Model.Settings.DirectorySubType" />
+                                <input type="hidden" name="DirectoryGithub" value="@Model.Settings.DirectoryGithub" />
+                                <input type="hidden" name="DirectoryOnionUrl" value="@Model.Settings.DirectoryOnionUrl" />
                                 <input type="hidden" name="osmType" value="@element.Type" />
                                 <input type="hidden" name="osmId" value="@element.Id" />
+                                <input type="hidden" name="submitToDirectory" value="@(Model.Settings.SubmitToDirectory ? "true" : "false")" />
                                 @if (hasBtc)
                                 {
                                     <button type="submit" class="btn btn-sm btn-outline-primary"
-                                            title="This location is already on BTC Map. Linking associates it with your BTCPay store for reverification.">
+                                            title="This location is already on BTC Map. Linking associates it with your BTCPay store.">
                                         Link existing listing
                                     </button>
                                 }
                                 else
                                 {
-                                    <button type="submit" class="btn btn-sm btn-primary">Link to this</button>
+                                    <button type="submit" class="btn btn-sm btn-primary">Select this</button>
                                 }
                             </form>
                         </div>
@@ -177,22 +180,29 @@
             <p>No existing locations found near your coordinates.</p>
         }
 
-        <h4 class="mb-3">Create a New Location</h4>
-        <p class="text-secondary">If none of the above match your business, create a new entry on OpenStreetMap.</p>
+        <h4 class="mb-3">None of the above?</h4>
+        <p class="text-secondary">We'll create a new listing on the map for you.</p>
 
-        <form method="post" asp-action="CreateListing" asp-route-storeId="@storeId">
+        <form method="post" asp-action="CreateNew" asp-route-storeId="@storeId">
             @Html.AntiForgeryToken()
             <input type="hidden" name="Settings.BusinessName" value="@Model.Settings.BusinessName" />
             <input type="hidden" name="Settings.Category" value="@Model.Settings.Category" />
             <input type="hidden" name="Settings.Latitude" value="@latStr" />
             <input type="hidden" name="Settings.Longitude" value="@lonStr" />
+            <input type="hidden" name="Settings.HouseNumber" value="@Model.Settings.HouseNumber" />
             <input type="hidden" name="Settings.Street" value="@Model.Settings.Street" />
             <input type="hidden" name="Settings.City" value="@Model.Settings.City" />
             <input type="hidden" name="Settings.PostCode" value="@Model.Settings.PostCode" />
             <input type="hidden" name="Settings.Country" value="@Model.Settings.Country" />
-            <input type="hidden" name="Settings.AcceptsOnchain" value="@onchainStr" />
-            <input type="hidden" name="Settings.AcceptsLightning" value="@lightningStr" />
-            <button type="submit" class="btn btn-success">Create New OSM Node</button>
+            <input type="hidden" name="Settings.Url" value="@Model.Settings.Url" />
+            <input type="hidden" name="Settings.DirectoryDescription" value="@Model.Settings.DirectoryDescription" />
+            <input type="hidden" name="Settings.DirectoryTwitter" value="@Model.Settings.DirectoryTwitter" />
+            <input type="hidden" name="Settings.DirectoryType" value="@Model.Settings.DirectoryType" />
+            <input type="hidden" name="Settings.DirectorySubType" value="@Model.Settings.DirectorySubType" />
+            <input type="hidden" name="Settings.DirectoryGithub" value="@Model.Settings.DirectoryGithub" />
+            <input type="hidden" name="Settings.DirectoryOnionUrl" value="@Model.Settings.DirectoryOnionUrl" />
+            <input type="hidden" name="submitToDirectory" value="@(Model.Settings.SubmitToDirectory ? "true" : "false")" />
+            <button type="submit" class="btn btn-success">Create New Listing</button>
         </form>
 
         <hr class="my-4" />

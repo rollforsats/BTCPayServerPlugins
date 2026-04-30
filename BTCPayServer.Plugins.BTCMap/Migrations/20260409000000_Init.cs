@@ -28,17 +28,25 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
                     Category = table.Column<string>(type: "text", nullable: true),
                     Latitude = table.Column<double>(type: "double precision", nullable: false),
                     Longitude = table.Column<double>(type: "double precision", nullable: false),
+                    HouseNumber = table.Column<string>(type: "text", nullable: true),
                     Street = table.Column<string>(type: "text", nullable: true),
                     City = table.Column<string>(type: "text", nullable: true),
                     PostCode = table.Column<string>(type: "text", nullable: true),
                     Country = table.Column<string>(type: "text", nullable: true),
-                    AcceptsOnchain = table.Column<bool>(type: "boolean", nullable: false),
                     AcceptsLightning = table.Column<bool>(type: "boolean", nullable: false),
                     CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     LastVerifiedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     Status = table.Column<int>(type: "integer", nullable: false),
                     DirectorySubmittedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
-                    DirectorySubmittedUrl = table.Column<string>(type: "text", nullable: true)
+                    DirectorySubmittedUrl = table.Column<string>(type: "text", nullable: true),
+                    DirectoryPrUrl = table.Column<string>(type: "text", nullable: true),
+                    Url = table.Column<string>(type: "text", nullable: true),
+                    Description = table.Column<string>(type: "text", nullable: true),
+                    Twitter = table.Column<string>(type: "text", nullable: true),
+                    Github = table.Column<string>(type: "text", nullable: true),
+                    OnionUrl = table.Column<string>(type: "text", nullable: true),
+                    DirectoryType = table.Column<string>(type: "text", nullable: true),
+                    DirectorySubType = table.Column<string>(type: "text", nullable: true)
                 },
                 constraints: table =>
                 {

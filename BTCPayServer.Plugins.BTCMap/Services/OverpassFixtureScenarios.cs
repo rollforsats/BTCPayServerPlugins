@@ -95,6 +95,7 @@ public static class OverpassFixtureScenarios
                 ["addr:street"] = "Rue de Rivoli",
                 ["addr:city"] = "Paris",
                 ["addr:postcode"] = "75004",
+                ["addr:country"] = "FR",
                 ["currency:XBT"] = "yes",
                 ["payment:onchain"] = "yes",
                 ["payment:lightning"] = "yes",
@@ -123,6 +124,7 @@ public static class OverpassFixtureScenarios
                     ["name"] = "Bitcoin Beach Bar",
                     ["amenity"] = "bar",
                     ["addr:city"] = "Paris",
+                    ["addr:country"] = "FR",
                     ["currency:XBT"] = "yes",
                     ["payment:lightning"] = "yes"
                 }
@@ -144,7 +146,8 @@ public static class OverpassFixtureScenarios
                     ["addr:housenumber"] = "13",
                     ["addr:street"] = "Rue de l'Ancienne Comédie",
                     ["addr:city"] = "Paris",
-                    ["addr:postcode"] = "75006"
+                    ["addr:postcode"] = "75006",
+                    ["addr:country"] = "FR"
                 }
             },
             new OverpassElement
@@ -157,7 +160,8 @@ public static class OverpassFixtureScenarios
                 {
                     ["name"] = "Jardin du Luxembourg",
                     ["tourism"] = "park",
-                    ["addr:city"] = "Paris"
+                    ["addr:city"] = "Paris",
+                    ["addr:country"] = "FR"
                 }
             }
         },
@@ -183,7 +187,8 @@ public static class OverpassFixtureScenarios
                     ["addr:housenumber"] = "8",
                     ["addr:street"] = "Rue du Cherche-Midi",
                     ["addr:city"] = "Paris",
-                    ["addr:postcode"] = "75006"
+                    ["addr:postcode"] = "75006",
+                    ["addr:country"] = "FR"
                 }
             },
             new OverpassElement
@@ -199,7 +204,8 @@ public static class OverpassFixtureScenarios
                     ["addr:housenumber"] = "20",
                     ["addr:street"] = "Rue Saint-Benoît",
                     ["addr:city"] = "Paris",
-                    ["addr:postcode"] = "75006"
+                    ["addr:postcode"] = "75006",
+                    ["addr:country"] = "FR"
                 }
             },
             new OverpassElement
@@ -215,7 +221,8 @@ public static class OverpassFixtureScenarios
                     ["addr:housenumber"] = "151",
                     ["addr:street"] = "Boulevard Saint-Germain",
                     ["addr:city"] = "Paris",
-                    ["addr:postcode"] = "75006"
+                    ["addr:postcode"] = "75006",
+                    ["addr:country"] = "FR"
                 }
             },
             new OverpassElement
@@ -231,7 +238,8 @@ public static class OverpassFixtureScenarios
                     ["addr:housenumber"] = "51",
                     ["addr:street"] = "Rue Montorgueil",
                     ["addr:city"] = "Paris",
-                    ["addr:postcode"] = "75002"
+                    ["addr:postcode"] = "75002",
+                    ["addr:country"] = "FR"
                 }
             }
         },

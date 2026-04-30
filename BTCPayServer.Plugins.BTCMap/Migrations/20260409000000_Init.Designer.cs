@@ -34,9 +34,6 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
                     b.Property<bool>("AcceptsLightning")
                         .HasColumnType("boolean");
 
-                    b.Property<bool>("AcceptsOnchain")
-                        .HasColumnType("boolean");
-
                     b.Property<string>("BusinessName")
                         .HasColumnType("text");
 
@@ -56,6 +53,9 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("DirectorySubmittedUrl")
+                        .HasColumnType("text");
+
+                    b.Property<string>("HouseNumber")
                         .HasColumnType("text");
 
                     b.Property<DateTimeOffset>("LastVerifiedAt")
