@@ -1,0 +1,154 @@
+using System;
+using System.Collections.Generic;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using BTCPayServer.Plugins.BTCMap.Services.Osm.Exceptions;
+using Microsoft.Extensions.Logging;
+using NBitcoin;
+
+namespace BTCPayServer.Plugins.BTCMap.Services.Osm;
+
+public class OsmAuthService : IOsmAuthService
+{
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly BTCPayNetworkProvider _networkProvider;
+    private readonly ILogger<OsmAuthService> _logger;
+
+    public OsmAuthService(
+        IHttpClientFactory httpClientFactory,
+        BTCPayNetworkProvider networkProvider,
+        ILogger<OsmAuthService> logger)
+    {
+        _httpClientFactory = httpClientFactory;
+        _networkProvider = networkProvider;
+        _logger = logger;
+    }
+
+    public bool IsMainnet => _networkProvider.NetworkType == ChainName.Mainnet;
+
+    private string OsmAuthBaseUrl => IsMainnet
+        ? "https://www.openstreetmap.org"
+        : "https://master.apis.dev.openstreetmap.org";
+
+    private string OsmApiBaseUrl => IsMainnet
+        ? "https://api.openstreetmap.org"
+        : "https://master.apis.dev.openstreetmap.org";
+
+    public string GetAuthorizationUrl(string clientId, string redirectUri, string state)
+    {
+        return $"{OsmAuthBaseUrl}/oauth2/authorize" +
+               $"?response_type=code" +
+               $"&client_id={Uri.EscapeDataString(clientId)}" +
+               $"&redirect_uri={Uri.EscapeDataString(redirectUri)}" +
+               $"&scope=write_api+read_prefs" +
+               $"&state={Uri.EscapeDataString(state)}";
+    }
+
+    public async Task<string> ExchangeCodeForTokenAsync(
+        string clientId, string clientSecret, string code, string redirectUri, CancellationToken ct)
+    {
+        var client = _httpClientFactory.CreateClient(OsmHttpClient.HttpClientName);
+        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "authorization_code",
+            ["code"] = code,
+            ["client_id"] = clientId,
+            ["client_secret"] = clientSecret,
+            ["redirect_uri"] = redirectUri
+        });
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{OsmAuthBaseUrl}/oauth2/token")
+        {
+            Content = content
+        };
+        request.Headers.UserAgent.ParseAdd(OsmUserAgent.Value);
+
+        using var response = await client.SendAsync(request, ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            var (error, description) = TryParseOAuthError(body);
+            _logger.LogWarning("OSM token exchange failed status={Status} error={Error} description={Description}",
+                (int)response.StatusCode, error, description);
+            throw new OsmTokenExchangeException((int)response.StatusCode, error, description, body);
+        }
+
+        using var doc = JsonDocument.Parse(body);
+        return doc.RootElement.GetProperty("access_token").GetString();
+    }
+
+    public async Task<string> GetDisplayNameAsync(string accessToken, CancellationToken ct)
+    {
+        var client = _httpClientFactory.CreateClient(OsmHttpClient.HttpClientName);
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            $"{OsmApiBaseUrl}/api/0.6/user/details.json");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        request.Headers.UserAgent.ParseAdd(OsmUserAgent.Value);
+
+        using var response = await client.SendAsync(request, ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogWarning("OSM user/details failed status={Status} body={Body}",
+                (int)response.StatusCode, body);
+            if ((int)response.StatusCode == 401)
+                throw new OsmAuthException("/api/0.6/user/details.json", body);
+            throw new OsmException((int)response.StatusCode, "/api/0.6/user/details.json",
+                $"OSM {(int)response.StatusCode} /api/0.6/user/details.json: {body}");
+        }
+
+        using var doc = JsonDocument.Parse(body);
+        return doc.RootElement.GetProperty("user").GetProperty("display_name").GetString();
+    }
+
+    public async Task RevokeAsync(string clientId, string clientSecret, string accessToken, CancellationToken ct)
+    {
+        try
+        {
+            var client = _httpClientFactory.CreateClient(OsmHttpClient.HttpClientName);
+            var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["token"] = accessToken,
+                ["client_id"] = clientId,
+                ["client_secret"] = clientSecret
+            });
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{OsmAuthBaseUrl}/oauth2/revoke")
+            {
+                Content = content
+            };
+            request.Headers.UserAgent.ParseAdd(OsmUserAgent.Value);
+
+            using var response = await client.SendAsync(request, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(ct);
+                _logger.LogWarning("OSM /oauth2/revoke returned non-success status={Status} body={Body}",
+                    (int)response.StatusCode, body);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Disconnect must complete locally regardless of the OSM round-trip.
+            _logger.LogWarning(ex, "OSM revoke best-effort failed; continuing with local Disconnect");
+        }
+    }
+
+    private static (string error, string description) TryParseOAuthError(string body)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            var error = root.TryGetProperty("error", out var e) ? e.GetString() ?? "" : "";
+            var desc = root.TryGetProperty("error_description", out var d) ? d.GetString() ?? "" : "";
+            return (error, desc);
+        }
+        catch
+        {
+            return ("", "");
+        }
+    }
+}
