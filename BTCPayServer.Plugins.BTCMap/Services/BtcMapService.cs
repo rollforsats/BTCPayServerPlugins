@@ -115,8 +115,10 @@ public class BtcMapService : IBtcMapService
         var hasOsmType = !string.IsNullOrWhiteSpace(osmType);
         if (osmId.HasValue != hasOsmType)
             throw new ArgumentException("osmId and osmType must be provided together when linking an existing OSM element.");
-        if (hasOsmType && osmType is not ("node" or "way"))
-            throw new ArgumentOutOfRangeException(nameof(osmType), "Only 'node' and 'way' are supported.");
+        // New-link path is node-only; writer (UpdateNodeAsync/UnlistNodeAsync) stays
+        // permissive of way for legacy listings already linked before the cutover.
+        if (hasOsmType && osmType != "node")
+            throw new ArgumentOutOfRangeException(nameof(osmType), "Only 'node' is supported for new links.");
         if (osmId is <= 0)
             throw new ArgumentOutOfRangeException(nameof(osmId), "osmId must be positive when linking an existing element.");
 

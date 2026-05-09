@@ -28,7 +28,7 @@ public static class OverpassFixtureScenarios
         "empty-everywhere",
         "fresh-cafe",
         "already-tagged",
-        "cascading-mixed",
+        "cascading",
         "multiple-nearby-untagged",
         "name-mismatch-fallback-to-address"
     };
@@ -38,7 +38,7 @@ public static class OverpassFixtureScenarios
         "empty-everywhere" => EmptyEverywhere(),
         "fresh-cafe" => FreshCafe(),
         "already-tagged" => AlreadyTagged(),
-        "cascading-mixed" => CascadingMixed(),
+        "cascading" => Cascading(),
         "multiple-nearby-untagged" => MultipleNearbyUntagged(),
         "name-mismatch-fallback-to-address" => NameMismatchFallbackToAddress(),
         _ => throw new ArgumentException(
@@ -110,7 +110,7 @@ public static class OverpassFixtureScenarios
             CoordinatesSearch: new());
     }
 
-    private static OverpassScenario CascadingMixed() => new(
+    private static OverpassScenario Cascading() => new(
         Duplicates: new()
         {
             new OverpassElement
@@ -147,20 +147,6 @@ public static class OverpassFixtureScenarios
                     ["addr:street"] = "Rue de l'Ancienne Comédie",
                     ["addr:city"] = "Paris",
                     ["addr:postcode"] = "75006",
-                    ["addr:country"] = "FR"
-                }
-            },
-            new OverpassElement
-            {
-                Type = "way",
-                Id = 3000003,
-                // No direct Lat/Lon — Center is used via OverpassElement.EffectiveLat/EffectiveLon
-                Center = new OverpassCenter { Lat = 48.85590, Lon = 2.35080 },
-                Tags = new Dictionary<string, string>
-                {
-                    ["name"] = "Jardin du Luxembourg",
-                    ["tourism"] = "park",
-                    ["addr:city"] = "Paris",
                     ["addr:country"] = "FR"
                 }
             }

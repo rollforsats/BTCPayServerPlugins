@@ -244,7 +244,11 @@ public class UIBtcMapStoreController : Controller
             return RedirectToAction(nameof(Index), new { storeId });
         }
 
-        if (osmId <= 0 || osmType is not ("node" or "way"))
+        // Picker is node-only since the cutover to node-only Overpass searches.
+        // Existing way-typed listings still work for update/reverify/unlist via the
+        // writer (which remains permissive), but new links from the picker only
+        // surface nodes.
+        if (osmId <= 0 || osmType != "node")
         {
             TempData["StatusMessage"] = "Error: Invalid OSM element.";
             return RedirectToAction(nameof(Index), new { storeId });
