@@ -32,11 +32,16 @@ public class Plugin : BaseBTCPayServerPlugin
         });
 
         // Services
+        services.AddSingleton<IListingRepository, ListingRepository>();
         services.AddSingleton<BtcMapService>();
+        services.AddSingleton<IBtcMapService>(sp => sp.GetRequiredService<BtcMapService>());
         services.AddSingleton<PluginBuilderApiClient>();
+        services.AddSingleton<IPluginBuilderApiClient>(sp => sp.GetRequiredService<PluginBuilderApiClient>());
         services.AddSingleton<DirectoryListingChecker>();
+        services.AddSingleton<IDirectoryListingChecker>(sp => sp.GetRequiredService<DirectoryListingChecker>());
         services.AddSingleton<OverpassApiClient>();
         services.AddSingleton<NominatimApiClient>();
+        services.AddSingleton<INominatimApiClient>(sp => sp.GetRequiredService<NominatimApiClient>());
 
         // IOverpassApiClient binding — dev fixture mode when BTCMAP_OVERPASS_SCENARIO is
         // set on non-mainnet Development builds, otherwise the real OverpassApiClient.

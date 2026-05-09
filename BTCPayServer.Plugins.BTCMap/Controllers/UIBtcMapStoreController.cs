@@ -20,16 +20,16 @@ namespace BTCPayServer.Plugins.BTCMap.Controllers;
 [Authorize(AuthenticationSchemes = AuthenticationSchemes.Cookie, Policy = Policies.CanModifyStoreSettings)]
 public class UIBtcMapStoreController : Controller
 {
-    private readonly BtcMapService _btcMapService;
-    private readonly NominatimApiClient _nominatimApiClient;
-    private readonly DirectoryListingChecker _directoryListingChecker;
+    private readonly IBtcMapService _btcMapService;
+    private readonly INominatimApiClient _nominatimApiClient;
+    private readonly IDirectoryListingChecker _directoryListingChecker;
     private readonly BTCPayNetworkProvider _networkProvider;
     private readonly ILogger<UIBtcMapStoreController> _logger;
 
     public UIBtcMapStoreController(
-        BtcMapService btcMapService,
-        NominatimApiClient nominatimApiClient,
-        DirectoryListingChecker directoryListingChecker,
+        IBtcMapService btcMapService,
+        INominatimApiClient nominatimApiClient,
+        IDirectoryListingChecker directoryListingChecker,
         BTCPayNetworkProvider networkProvider,
         ILogger<UIBtcMapStoreController> logger)
     {

@@ -22,7 +22,7 @@ public class PluginBuilderApiException : Exception
     }
 }
 
-public class PluginBuilderApiClient
+public class PluginBuilderApiClient : IPluginBuilderApiClient
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {

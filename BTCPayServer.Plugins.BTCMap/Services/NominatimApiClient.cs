@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace BTCPayServer.Plugins.BTCMap.Services;
 
-public class NominatimApiClient
+public class NominatimApiClient : INominatimApiClient
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<NominatimApiClient> _logger;

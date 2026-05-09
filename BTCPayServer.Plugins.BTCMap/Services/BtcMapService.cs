@@ -9,30 +9,30 @@ using Microsoft.Extensions.Logging;
 
 namespace BTCPayServer.Plugins.BTCMap.Services;
 
-public class BtcMapService
+public class BtcMapService : IBtcMapService
 {
     private readonly BtcMapDbContextFactory _dbContextFactory;
-    private readonly PluginBuilderApiClient _apiClient;
+    private readonly IListingRepository _listingRepository;
+    private readonly IPluginBuilderApiClient _apiClient;
     private readonly IOverpassApiClient _overpassApiClient;
     private readonly ILogger<BtcMapService> _logger;
 
     public BtcMapService(
         BtcMapDbContextFactory dbContextFactory,
-        PluginBuilderApiClient apiClient,
+        IListingRepository listingRepository,
+        IPluginBuilderApiClient apiClient,
         IOverpassApiClient overpassApiClient,
         ILogger<BtcMapService> logger)
     {
         _dbContextFactory = dbContextFactory;
+        _listingRepository = listingRepository;
         _apiClient = apiClient;
         _overpassApiClient = overpassApiClient;
         _logger = logger;
     }
 
-    public async Task<BtcMapListing> GetListingForStore(string storeId)
-    {
-        await using var ctx = _dbContextFactory.CreateContext();
-        return await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId && l.Status != ListingStatus.Pending);
-    }
+    public Task<BtcMapListing> GetListingForStore(string storeId)
+        => _listingRepository.GetListingForStoreAsync(storeId);
 
     public async Task<List<OverpassElement>> SearchNearby(double lat, double lon, string name,
         string street = null, string city = null)
