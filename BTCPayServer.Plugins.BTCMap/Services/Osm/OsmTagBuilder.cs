@@ -15,6 +15,7 @@ public class OsmTagBuilder : IOsmTagBuilder
     public const string CurrencyXbtKey = "currency:XBT";
     public const string PaymentLightningKey = "payment:lightning";
     public const string PaymentBitcoinKey = "payment:bitcoin";
+    public const string PhoneKey = "phone";
 
     private readonly Func<DateTime> _utcNow;
 
@@ -62,6 +63,13 @@ public class OsmTagBuilder : IOsmTagBuilder
         TryAdd(merge, "addr:city", merchant.City);
         TryAdd(merge, "addr:postcode", merchant.PostCode);
         TryAdd(merge, "addr:country", merchant.Country);
+
+        // phone is optional; when the merchant clears it on an existing element
+        // we remove the tag (mirrors payment:lightning gating).
+        if (!string.IsNullOrWhiteSpace(merchant.Phone))
+            merge.SetTags[PhoneKey] = merchant.Phone.Trim();
+        else if (existingTags != null && existingTags.ContainsKey(PhoneKey))
+            merge.RemoveTags.Add(PhoneKey);
 
         return merge;
     }

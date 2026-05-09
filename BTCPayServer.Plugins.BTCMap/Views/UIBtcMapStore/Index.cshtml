@@ -70,6 +70,10 @@
                     {
                         <dt class="col-sm-3">Address</dt><dd class="col-sm-9">@Model.Address</dd>
                     }
+                    @if (!string.IsNullOrEmpty(Model.ExistingListing.Phone))
+                    {
+                        <dt class="col-sm-3">Phone</dt><dd class="col-sm-9">@Model.ExistingListing.Phone</dd>
+                    }
                     <dt class="col-sm-3">OSM Element</dt><dd class="col-sm-9"><a href="@osmBaseUrl/@Model.ExistingListing.OsmElementType/@Model.ExistingListing.OsmElementId" target="_blank" rel="noopener noreferrer">@Model.ExistingListing.OsmElementType/@Model.ExistingListing.OsmElementId</a></dd>
                     <dt class="col-sm-3">Last Verified</dt><dd class="col-sm-9">@Model.ExistingListing.LastVerifiedAt.ToString("yyyy-MM-dd")</dd>
                     <dt class="col-sm-3">Lightning</dt><dd class="col-sm-9">@(Model.ExistingListing.AcceptsLightning ? "Yes" : "No")</dd>
@@ -289,6 +293,15 @@
                             <label asp-for="Settings.Longitude" class="form-label">Longitude <span class="text-danger">*</span></label>
                             <input asp-for="Settings.Longitude" class="form-control" step="any" required />
                             <span asp-validation-for="Settings.Longitude" class="text-danger"></span>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label asp-for="Settings.Phone" class="form-label">Phone (optional)</label>
+                            <input asp-for="Settings.Phone" class="form-control" placeholder="+44 20 8452 7891" />
+                            <div class="form-text">International format, starting with <code>+</code> and the country code.</div>
+                            <span asp-validation-for="Settings.Phone" class="text-danger"></span>
                         </div>
                     </div>
 

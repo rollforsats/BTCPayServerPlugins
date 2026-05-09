@@ -169,6 +169,7 @@ public class UIBtcMapStoreController : Controller
                 City = listing.City,
                 PostCode = listing.PostCode,
                 Country = listing.Country,
+                Phone = listing.Phone,
                 Url = listing.Url ?? storeData?.StoreWebsite,
                 DirectoryDescription = listing.Description,
                 DirectoryTwitter = listing.Twitter,

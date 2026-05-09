@@ -33,6 +33,7 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
                     City = table.Column<string>(type: "text", nullable: true),
                     PostCode = table.Column<string>(type: "text", nullable: true),
                     Country = table.Column<string>(type: "text", nullable: true),
+                    Phone = table.Column<string>(type: "text", nullable: true),
                     AcceptsLightning = table.Column<bool>(type: "boolean", nullable: false),
                     CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     LastVerifiedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),

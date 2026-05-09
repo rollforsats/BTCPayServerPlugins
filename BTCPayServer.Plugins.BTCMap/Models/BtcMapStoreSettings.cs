@@ -16,6 +16,9 @@ public class BtcMapStoreSettings
     public string PostCode { get; set; }
     public string Country { get; set; }
 
+    [Phone]
+    public string Phone { get; set; }
+
     [Required]
     [Range(-90, 90)]
     public double? Latitude { get; set; }

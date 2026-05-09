@@ -59,7 +59,8 @@ public class BtcMapService : IBtcMapService
             Street = settings.Street,
             City = settings.City,
             PostCode = settings.PostCode,
-            Country = settings.Country
+            Country = settings.Country,
+            Phone = settings.Phone
         };
 
     private static BtcMapMerchant ToMerchant(BtcMapListing listing, BtcMapStoreSettings settings, bool acceptsLightning)
@@ -75,7 +76,8 @@ public class BtcMapService : IBtcMapService
             Street = settings.Street,
             City = settings.City,
             PostCode = settings.PostCode,
-            Country = settings.Country
+            Country = settings.Country,
+            Phone = settings.Phone
         };
 
     public Task<BtcMapListing> GetListingForStore(string storeId)
@@ -159,6 +161,7 @@ public class BtcMapService : IBtcMapService
             City = settings.City,
             PostCode = settings.PostCode,
             Country = settings.Country,
+            Phone = settings.Phone,
             AcceptsLightning = acceptsLightning,
             CreatedAt = DateTimeOffset.UtcNow,
             LastVerifiedAt = DateTimeOffset.UtcNow,
@@ -333,6 +336,7 @@ public class BtcMapService : IBtcMapService
         dbListing.City = settings.City;
         dbListing.PostCode = settings.PostCode;
         dbListing.Country = settings.Country;
+        dbListing.Phone = settings.Phone;
         dbListing.AcceptsLightning = acceptsLightning;
         dbListing.LastVerifiedAt = DateTimeOffset.UtcNow;
         await ctx.SaveChangesAsync();
@@ -405,7 +409,8 @@ public class BtcMapService : IBtcMapService
                 Street = listing.Street,
                 City = listing.City,
                 PostCode = listing.PostCode,
-                Country = listing.Country
+                Country = listing.Country,
+                Phone = listing.Phone
             };
             try
             {

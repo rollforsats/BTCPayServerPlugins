@@ -22,7 +22,8 @@ public class OsmTagBuilderTests
         string street = null,
         string city = null,
         string postCode = null,
-        string country = null)
+        string country = null,
+        string phone = null)
         => new()
         {
             Name = name,
@@ -35,7 +36,8 @@ public class OsmTagBuilderTests
             Street = street,
             City = city,
             PostCode = postCode,
-            Country = country
+            Country = country,
+            Phone = phone
         };
 
     [Fact]
@@ -188,5 +190,38 @@ public class OsmTagBuilderTests
     public void BuildMerge_RejectsNullMerchant()
     {
         Assert.Throws<ArgumentNullException>(() => BuilderAt(FixedClock).BuildMerge(null));
+    }
+
+    [Fact]
+    public void Create_WritesPhone_WhenProvided()
+    {
+        var merge = BuilderAt(FixedClock).BuildMerge(MerchantWith(phone: "+44 20 8452 7891"));
+        Assert.Equal("+44 20 8452 7891", merge.SetTags["phone"]);
+    }
+
+    [Fact]
+    public void Create_OmitsPhone_WhenBlank()
+    {
+        var merge = BuilderAt(FixedClock).BuildMerge(MerchantWith(phone: "   "));
+        Assert.False(merge.SetTags.ContainsKey("phone"));
+        Assert.DoesNotContain("phone", merge.RemoveTags);
+    }
+
+    [Fact]
+    public void Update_RemovesPhone_WhenClearedFromExisting()
+    {
+        var existing = new Dictionary<string, string> { ["phone"] = "+44 20 8452 7891" };
+        var merge = BuilderAt(FixedClock).BuildMerge(MerchantWith(phone: null), existing);
+        Assert.Contains("phone", merge.RemoveTags);
+        Assert.False(merge.SetTags.ContainsKey("phone"));
+    }
+
+    [Fact]
+    public void Update_LeavesPhoneAlone_WhenAbsentBothSides()
+    {
+        var existing = new Dictionary<string, string>();
+        var merge = BuilderAt(FixedClock).BuildMerge(MerchantWith(phone: null), existing);
+        Assert.DoesNotContain("phone", merge.RemoveTags);
+        Assert.False(merge.SetTags.ContainsKey("phone"));
     }
 }

@@ -94,6 +94,9 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
                     b.Property<int>("OsmElementVersion")
                         .HasColumnType("integer");
 
+                    b.Property<string>("Phone")
+                        .HasColumnType("text");
+
                     b.Property<string>("PostCode")
                         .HasColumnType("text");
 
