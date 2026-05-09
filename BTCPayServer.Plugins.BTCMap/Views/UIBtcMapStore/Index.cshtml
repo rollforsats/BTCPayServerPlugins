@@ -29,6 +29,8 @@
             List your business on <a href="https://btcmap.org" target="_blank" rel="noopener noreferrer">BTC Map</a> so customers can find you.
         </p>
 
+        <partial name="_OsmConnect" model="Model" />
+
         @if (Model.ExistingListing != null && Model.ExistingListing.Status == ListingStatus.Active)
         {
             @if (Model.DaysUntilVerificationExpires.HasValue && Model.DaysUntilVerificationExpires.Value <= 30)
