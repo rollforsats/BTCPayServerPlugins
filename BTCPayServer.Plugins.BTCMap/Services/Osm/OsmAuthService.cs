@@ -11,6 +11,16 @@ using NBitcoin;
 
 namespace BTCPayServer.Plugins.BTCMap.Services.Osm;
 
+// Rationale for not routing through IOsmHttpClient:
+//   - /oauth2/token and /oauth2/revoke are unauthenticated (use client_id+client_secret in
+//     the form body, not the merchant's bearer token), so IOsmHttpClient's bearer-attaching
+//     contract doesn't apply.
+//   - Token-exchange errors arrive as a JSON body with {error, error_description} that
+//     OsmTokenExchangeException carries — the typed-exception map in IOsmHttpClient.EnsureSuccessAsync
+//     would lose that detail.
+//   - User-Agent comes from the shared OsmUserAgent static, so the two HTTP surfaces can't drift.
+// /api/0.6/user/details.json *is* a bearer call and could move onto IOsmHttpClient if we ever extend
+// the interface to expose typed JSON GETs; deferred.
 public class OsmAuthService : IOsmAuthService
 {
     private readonly IHttpClientFactory _httpClientFactory;

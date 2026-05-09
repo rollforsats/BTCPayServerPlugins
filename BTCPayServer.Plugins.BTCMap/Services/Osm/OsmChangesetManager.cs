@@ -12,6 +12,7 @@ public class OsmChangesetManager : IOsmChangesetManager
 
     public const string CommentCreate = "Add {name} as a bitcoin-accepting place via BTCPay Server #btcmap";
     public const string CommentUpdate = "Tag {name} as accepting bitcoin via BTCPay Server #btcmap";
+    public const string CommentReverify = "Re-verify {name} still accepts bitcoin via BTCPay Server #btcmap";
     public const string CommentUnlist = "Un-list {name} from bitcoin-accepting places via BTCPay Server #btcmap";
 
     private readonly IOsmHttpClient _http;

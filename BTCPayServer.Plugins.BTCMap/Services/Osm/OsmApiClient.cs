@@ -81,7 +81,7 @@ public class OsmApiClient : IOsmApiClient
         => UpdateNodeInternal(storeId, nodeId, nodeType, merchant, OsmChangesetManager.CommentUpdate, ct);
 
     public Task<int> ReverifyNodeAsync(string storeId, long nodeId, string nodeType, BtcMapMerchant merchant, CancellationToken ct)
-        => UpdateNodeInternal(storeId, nodeId, nodeType, merchant, OsmChangesetManager.CommentUpdate, ct);
+        => UpdateNodeInternal(storeId, nodeId, nodeType, merchant, OsmChangesetManager.CommentReverify, ct);
 
     private async Task<int> UpdateNodeInternal(
         string storeId, long nodeId, string nodeType, BtcMapMerchant merchant, string commentTemplate, CancellationToken ct)
@@ -197,8 +197,10 @@ public class OsmApiClient : IOsmApiClient
         if (string.IsNullOrWhiteSpace(nodeType))
             throw new ArgumentException("nodeType is required", nameof(nodeType));
         var normalized = nodeType.Trim().ToLowerInvariant();
-        if (normalized is not ("node" or "way" or "relation"))
-            throw new ArgumentOutOfRangeException(nameof(nodeType), "nodeType must be one of: node, way, relation");
+        // node + way only — relation support is tracked separately (oq1-osm-relation-support)
+        // and the form/dispatcher haven't been updated for it.
+        if (normalized is not ("node" or "way"))
+            throw new ArgumentOutOfRangeException(nameof(nodeType), "nodeType must be one of: node, way");
         return normalized;
     }
 
