@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 using BTCPayServer.Abstractions.Constants;
 using BTCPayServer.Abstractions.Extensions;
@@ -9,8 +10,10 @@ using BTCPayServer.Data;
 using BTCPayServer.Plugins.BTCMap.Data;
 using BTCPayServer.Plugins.BTCMap.Models;
 using BTCPayServer.Plugins.BTCMap.Services;
+using BTCPayServer.Plugins.BTCMap.Services.Osm;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Logging;
 using NBitcoin;
 
@@ -20,9 +23,13 @@ namespace BTCPayServer.Plugins.BTCMap.Controllers;
 [Authorize(AuthenticationSchemes = AuthenticationSchemes.Cookie, Policy = Policies.CanModifyStoreSettings)]
 public class UIBtcMapStoreController : Controller
 {
+    private const int PendingStateTtlMinutes = 10;
+
     private readonly IBtcMapService _btcMapService;
     private readonly INominatimApiClient _nominatimApiClient;
     private readonly IDirectoryListingChecker _directoryListingChecker;
+    private readonly IBtcMapStoreOAuthRepository _oauthRepo;
+    private readonly IOsmAuthService _osmAuthService;
     private readonly BTCPayNetworkProvider _networkProvider;
     private readonly ILogger<UIBtcMapStoreController> _logger;
 
@@ -30,12 +37,16 @@ public class UIBtcMapStoreController : Controller
         IBtcMapService btcMapService,
         INominatimApiClient nominatimApiClient,
         IDirectoryListingChecker directoryListingChecker,
+        IBtcMapStoreOAuthRepository oauthRepo,
+        IOsmAuthService osmAuthService,
         BTCPayNetworkProvider networkProvider,
         ILogger<UIBtcMapStoreController> logger)
     {
         _btcMapService = btcMapService;
         _nominatimApiClient = nominatimApiClient;
         _directoryListingChecker = directoryListingChecker;
+        _oauthRepo = oauthRepo;
+        _osmAuthService = osmAuthService;
         _networkProvider = networkProvider;
         _logger = logger;
     }
@@ -93,8 +104,11 @@ public class UIBtcMapStoreController : Controller
             ExistingListing = listing,
             StatusMessage = TempData["StatusMessage"]?.ToString(),
             DirectorySubmittedAt = listing?.DirectorySubmittedAt,
-            DirectoryPrUrl = listing?.DirectoryPrUrl
+            DirectoryPrUrl = listing?.DirectoryPrUrl,
+            RedirectUriToShow = BuildOsmCallbackUri(storeId)
         };
+
+        await PopulateOsmStateAsync(vm, storeId);
 
         if (listing != null)
         {
@@ -432,6 +446,127 @@ public class UIBtcMapStoreController : Controller
             _logger.LogError(ex, "Geocoding failed for store {StoreId}", storeId);
             return Json(new { success = false, message = "Geocoding service unavailable. Please try again." });
         }
+    }
+
+    [HttpPost("oauth/save-credentials")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveOsmCredentials(string storeId, [Bind(Prefix = "OsmCredentials")] OsmCredentialsViewModel model)
+    {
+        var clientId = (model?.OsmClientId ?? string.Empty).Trim();
+        var clientSecret = (model?.OsmClientSecret ?? string.Empty).Trim();
+        if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
+        {
+            TempData["StatusMessage"] = "Error: OSM Client ID and Client Secret are both required.";
+            return RedirectToAction(nameof(Index), new { storeId });
+        }
+
+        await _oauthRepo.SaveClientCredentialsAsync(storeId, clientId, clientSecret);
+        TempData["StatusMessage"] = "OSM credentials saved. Click Connect to authorize.";
+        return RedirectToAction(nameof(Index), new { storeId });
+    }
+
+    [HttpPost("oauth/clear-credentials")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ClearOsmCredentials(string storeId)
+    {
+        await _oauthRepo.ClearOAuthAsync(storeId);
+        TempData["StatusMessage"] = "OSM credentials cleared.";
+        return RedirectToAction(nameof(Index), new { storeId });
+    }
+
+    [HttpPost("oauth/connect")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ConnectOsm(string storeId)
+    {
+        var oauth = await _oauthRepo.GetForStoreAsync(storeId);
+        if (oauth == null || string.IsNullOrWhiteSpace(oauth.OsmClientId) || string.IsNullOrWhiteSpace(oauth.OsmClientSecret))
+        {
+            TempData["StatusMessage"] = "Error: Save OSM credentials before connecting.";
+            return RedirectToAction(nameof(Index), new { storeId });
+        }
+
+        var stateBytes = RandomNumberGenerator.GetBytes(32);
+        var state = WebEncoders.Base64UrlEncode(stateBytes);
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(PendingStateTtlMinutes);
+        await _oauthRepo.SetPendingStateAsync(storeId, state, expiresAt);
+
+        var redirectUri = BuildOsmCallbackUri(storeId);
+        var authorizeUrl = _osmAuthService.GetAuthorizationUrl(oauth.OsmClientId, redirectUri, state);
+        return Redirect(authorizeUrl);
+    }
+
+    [HttpPost("oauth/disconnect")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DisconnectOsm(string storeId)
+    {
+        var oauth = await _oauthRepo.GetForStoreAsync(storeId);
+        if (oauth != null && !string.IsNullOrWhiteSpace(oauth.OsmAccessToken)
+            && !string.IsNullOrWhiteSpace(oauth.OsmClientId) && !string.IsNullOrWhiteSpace(oauth.OsmClientSecret))
+        {
+            await _osmAuthService.RevokeAsync(oauth.OsmClientId, oauth.OsmClientSecret, oauth.OsmAccessToken,
+                HttpContext.RequestAborted);
+        }
+        await _oauthRepo.ClearOAuthAsync(storeId);
+        TempData["StatusMessage"] = "Disconnected from OpenStreetMap.";
+        return RedirectToAction(nameof(Index), new { storeId });
+    }
+
+    private string BuildOsmCallbackUri(string storeId)
+    {
+        var root = Request.Scheme + "://" + Request.Host.ToUriComponent() + Request.PathBase;
+        return $"{root.TrimEnd('/')}/plugins/btcmap/stores/{storeId}/oauth/callback";
+    }
+
+    private async Task PopulateOsmStateAsync(BtcMapListingViewModel vm, string storeId)
+    {
+        var oauth = await _oauthRepo.GetForStoreAsync(storeId);
+
+        // Surface error/state hints handed off from the OAuth callback via TempData.
+        var pendingExpiredFlag = TempData["OsmConnectionState"]?.ToString();
+        var errorKindFlag = TempData["OsmErrorKind"]?.ToString();
+        var errorMessage = TempData["OsmErrorMessage"]?.ToString();
+
+        if (!string.IsNullOrEmpty(errorKindFlag) && Enum.TryParse<OsmConnectionErrorKind>(errorKindFlag, out var kind))
+        {
+            vm.OsmErrorKind = kind;
+            vm.OsmErrorMessage = errorMessage;
+            vm.OsmState = OsmConnectionState.ConnectionError;
+        }
+        else if (string.Equals(pendingExpiredFlag, nameof(OsmConnectionState.PendingExpired), StringComparison.Ordinal))
+        {
+            vm.OsmState = OsmConnectionState.PendingExpired;
+        }
+
+        if (oauth == null)
+        {
+            if (vm.OsmState == OsmConnectionState.NotConfigured)
+                vm.OsmState = OsmConnectionState.NotConfigured;
+            return;
+        }
+
+        vm.OsmUsername = oauth.OsmUsername;
+        vm.OsmConnectedAt = oauth.OsmConnectedAt;
+        vm.OsmClientIdMasked = MaskClientId(oauth.OsmClientId);
+        vm.OsmCredentials.OsmClientId = oauth.OsmClientId;
+        // Never echo the secret back into the form. Show masked indicator only.
+
+        // Only override OsmState if no error/expired flag was carried over from the callback.
+        if (vm.OsmErrorKind == OsmConnectionErrorKind.None && vm.OsmState != OsmConnectionState.PendingExpired)
+        {
+            if (!string.IsNullOrEmpty(oauth.OsmAccessToken))
+                vm.OsmState = OsmConnectionState.Connected;
+            else if (!string.IsNullOrEmpty(oauth.OsmClientId) && !string.IsNullOrEmpty(oauth.OsmClientSecret))
+                vm.OsmState = OsmConnectionState.ConfiguredNotConnected;
+            else
+                vm.OsmState = OsmConnectionState.NotConfigured;
+        }
+    }
+
+    private static string MaskClientId(string clientId)
+    {
+        if (string.IsNullOrEmpty(clientId)) return null;
+        if (clientId.Length <= 8) return new string('•', clientId.Length);
+        return clientId[..4] + new string('•', Math.Max(4, clientId.Length - 8)) + clientId[^4..];
     }
 
     [HttpPost("confirm-verification")]
