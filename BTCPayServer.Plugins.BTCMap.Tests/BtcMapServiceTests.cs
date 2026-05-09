@@ -17,6 +17,8 @@ public class BtcMapServiceTests
             listingRepository: repo,
             apiClient: null,
             overpassApiClient: null,
+            osmApiClient: null,
+            oauthRepo: null,
             logger: new NullLogger<BtcMapService>());
 
         var result = await service.GetListingForStore("store-1");

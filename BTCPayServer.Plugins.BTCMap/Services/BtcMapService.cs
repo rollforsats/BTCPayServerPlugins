@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using BTCPayServer.Plugins.BTCMap.Data;
 using BTCPayServer.Plugins.BTCMap.Models;
+using BTCPayServer.Plugins.BTCMap.Services.Osm;
+using BTCPayServer.Plugins.BTCMap.Services.Osm.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -15,6 +18,8 @@ public class BtcMapService : IBtcMapService
     private readonly IListingRepository _listingRepository;
     private readonly IPluginBuilderApiClient _apiClient;
     private readonly IOverpassApiClient _overpassApiClient;
+    private readonly IOsmApiClient _osmApiClient;
+    private readonly IBtcMapStoreOAuthRepository _oauthRepo;
     private readonly ILogger<BtcMapService> _logger;
 
     public BtcMapService(
@@ -22,14 +27,56 @@ public class BtcMapService : IBtcMapService
         IListingRepository listingRepository,
         IPluginBuilderApiClient apiClient,
         IOverpassApiClient overpassApiClient,
+        IOsmApiClient osmApiClient,
+        IBtcMapStoreOAuthRepository oauthRepo,
         ILogger<BtcMapService> logger)
     {
         _dbContextFactory = dbContextFactory;
         _listingRepository = listingRepository;
         _apiClient = apiClient;
         _overpassApiClient = overpassApiClient;
+        _osmApiClient = osmApiClient;
+        _oauthRepo = oauthRepo;
         _logger = logger;
     }
+
+    private async Task<bool> StoreHasOsmToken(string storeId)
+    {
+        var oauth = await _oauthRepo.GetForStoreAsync(storeId);
+        return oauth != null && !string.IsNullOrEmpty(oauth.OsmAccessToken);
+    }
+
+    private static BtcMapMerchant ToMerchant(BtcMapStoreSettings settings, bool acceptsLightning)
+        => new()
+        {
+            Name = settings.BusinessName,
+            OsmCategory = settings.Category,
+            Url = settings.Url,
+            AcceptsLightning = acceptsLightning,
+            Latitude = settings.Latitude,
+            Longitude = settings.Longitude,
+            HouseNumber = settings.HouseNumber,
+            Street = settings.Street,
+            City = settings.City,
+            PostCode = settings.PostCode,
+            Country = settings.Country
+        };
+
+    private static BtcMapMerchant ToMerchant(BtcMapListing listing, BtcMapStoreSettings settings, bool acceptsLightning)
+        => new()
+        {
+            Name = settings.BusinessName,
+            OsmCategory = settings.Category ?? listing.Category,
+            Url = settings.Url,
+            AcceptsLightning = acceptsLightning,
+            Latitude = listing.Latitude,
+            Longitude = listing.Longitude,
+            HouseNumber = settings.HouseNumber,
+            Street = settings.Street,
+            City = settings.City,
+            PostCode = settings.PostCode,
+            Country = settings.Country
+        };
 
     public Task<BtcMapListing> GetListingForStore(string storeId)
         => _listingRepository.GetListingForStoreAsync(storeId);
@@ -132,75 +179,150 @@ public class BtcMapService : IBtcMapService
             ctx.Listings.Remove(existing);
         ctx.Listings.Add(listing);
 
-        var response = await _apiClient.SubmitAsync(request);
-
-        // Upstream's only OSM-leg skip on a healthy server is `osm-access-token-not-configured` —
-        // an operator config error, not a merchant-facing outcome. Surface as an error so the
-        // merchant sees the truth and the operator gets paged; nothing persists locally.
-        if (response.Osm?.Skipped != null)
-            throw new PluginBuilderApiException(503,
-                $"BTC Map service is unavailable (OSM leg skipped: {response.Osm.Skipped}). Please contact your administrator.");
-
-        if (response.Osm != null && response.Osm.NodeId.HasValue)
+        if (await StoreHasOsmToken(storeId))
         {
-            listing.OsmElementId = response.Osm.NodeId.Value;
-            listing.OsmElementType = response.Osm.NodeType ?? listing.OsmElementType;
-            listing.OsmElementVersion = response.Osm.NewVersion ?? 1;
+            // Per-store OAuth path: tag OSM directly using the merchant's own
+            // credentials, then route any directory leg through plugin-builder
+            // with TagOnOsm=false so the bot doesn't double-tag.
+            await DispatchOsmSubmitAsync(storeId, settings, acceptsLightning, listing, osmType, osmId,
+                CancellationToken.None);
+
+            if (submitToDirectory)
+            {
+                request.TagOnOsm = false;
+                request.OsmNodeId = listing.OsmElementId;
+                request.OsmNodeType = listing.OsmElementType;
+                var directoryResponse = await _apiClient.SubmitAsync(request);
+                ApplyDirectoryResponse(listing, directoryResponse, settings.Url);
+            }
         }
+        else
+        {
+            // Legacy plugin-builder bot path.
+            var response = await _apiClient.SubmitAsync(request);
+
+            // Upstream's only OSM-leg skip on a healthy server is `osm-access-token-not-configured` —
+            // an operator config error, not a merchant-facing outcome. Surface as an error so the
+            // merchant sees the truth and the operator gets paged; nothing persists locally.
+            if (response.Osm?.Skipped != null)
+                throw new PluginBuilderApiException(503,
+                    $"BTC Map service is unavailable (OSM leg skipped: {response.Osm.Skipped}). Please contact your administrator.");
+
+            if (response.Osm != null && response.Osm.NodeId.HasValue)
+            {
+                listing.OsmElementId = response.Osm.NodeId.Value;
+                listing.OsmElementType = response.Osm.NodeType ?? listing.OsmElementType;
+                listing.OsmElementVersion = response.Osm.NewVersion ?? 1;
+            }
+            ApplyDirectoryResponse(listing, response, settings.Url);
+        }
+
         listing.Status = ListingStatus.Active;
-
-        if (response.Directory != null)
-        {
-            if (response.Directory.PrUrl != null)
-            {
-                listing.DirectorySubmittedAt = DateTimeOffset.UtcNow;
-                listing.DirectorySubmittedUrl = settings.Url;
-                listing.DirectoryPrUrl = response.Directory.PrUrl;
-            }
-            else if (response.Directory.Skipped?.StartsWith("duplicate-url:") == true)
-            {
-                // URL already merged in merchants.json — track as submitted so the
-                // merchants.json page-load check surfaces the merged banner.
-                listing.DirectorySubmittedAt = DateTimeOffset.UtcNow;
-                listing.DirectorySubmittedUrl = settings.Url;
-                _logger.LogInformation("Directory submission skipped (already merged): {Reason}", response.Directory.Skipped);
-            }
-            else if (response.Directory.Skipped != null)
-            {
-                _logger.LogInformation("Directory submission skipped: {Reason}", response.Directory.Skipped);
-            }
-        }
-
         await ctx.SaveChangesAsync();
         return listing;
     }
 
+    private void ApplyDirectoryResponse(BtcMapListing listing, BtcMapSubmitResponse response, string url)
+    {
+        if (response.Directory == null) return;
+        if (response.Directory.PrUrl != null)
+        {
+            listing.DirectorySubmittedAt = DateTimeOffset.UtcNow;
+            listing.DirectorySubmittedUrl = url;
+            listing.DirectoryPrUrl = response.Directory.PrUrl;
+        }
+        else if (response.Directory.Skipped?.StartsWith("duplicate-url:") == true)
+        {
+            // URL already merged in merchants.json — track as submitted so the
+            // merchants.json page-load check surfaces the merged banner.
+            listing.DirectorySubmittedAt = DateTimeOffset.UtcNow;
+            listing.DirectorySubmittedUrl = url;
+            _logger.LogInformation("Directory submission skipped (already merged): {Reason}", response.Directory.Skipped);
+        }
+        else if (response.Directory.Skipped != null)
+        {
+            _logger.LogInformation("Directory submission skipped: {Reason}", response.Directory.Skipped);
+        }
+    }
+
+    private async Task DispatchOsmSubmitAsync(string storeId, BtcMapStoreSettings settings, bool acceptsLightning,
+        BtcMapListing listing, string osmType, long? osmId, CancellationToken ct)
+    {
+        var merchant = ToMerchant(settings, acceptsLightning);
+        try
+        {
+            if (osmId.HasValue)
+            {
+                var newVersion = await _osmApiClient.UpdateNodeAsync(storeId, osmId.Value, osmType, merchant, ct);
+                listing.OsmElementId = osmId.Value;
+                listing.OsmElementType = osmType;
+                listing.OsmElementVersion = newVersion;
+            }
+            else
+            {
+                var created = await _osmApiClient.CreateNodeAsync(storeId, merchant, ct);
+                listing.OsmElementId = created.NodeId;
+                listing.OsmElementType = "node";
+                listing.OsmElementVersion = created.Version;
+            }
+        }
+        catch (OsmAuthException)
+        {
+            // 401 from OSM: invalidate the stored token so the merchant sees the
+            // Reconnect state on next page load. Re-throw so the controller can
+            // surface a clear error to the merchant.
+            await _oauthRepo.ClearTokenOnlyAsync(storeId);
+            throw;
+        }
+    }
+
     public async Task UpdateListing(BtcMapListing listing, BtcMapStoreSettings settings, bool acceptsLightning)
     {
-        var request = new BtcMapSubmitRequest
-        {
-            Name = settings.BusinessName,
-            Url = settings.Url,
-            // Reverify-only path: OSM tags don't carry description, so the stored value
-            // is sent purely to satisfy the request shape. Form edits to DirectoryDescription
-            // flow through SubmitListing's directory leg, not here.
-            Description = listing.Description,
-            OsmNodeId = listing.OsmElementId,
-            OsmNodeType = listing.OsmElementType,
-            TagOnOsm = true,
-            SubmitToDirectory = false,
-            AcceptsLightning = acceptsLightning,
-            Address = BuildAddress(settings.HouseNumber, settings.Street, settings.City, settings.PostCode, settings.Country)
-        };
+        int? newVersion = null;
 
-        var response = await _apiClient.SubmitAsync(request);
+        if (await StoreHasOsmToken(listing.StoreId))
+        {
+            var merchant = ToMerchant(listing, settings, acceptsLightning);
+            try
+            {
+                newVersion = await _osmApiClient.UpdateNodeAsync(
+                    listing.StoreId, listing.OsmElementId, listing.OsmElementType, merchant, CancellationToken.None);
+            }
+            catch (OsmAuthException)
+            {
+                await _oauthRepo.ClearTokenOnlyAsync(listing.StoreId);
+                throw;
+            }
+        }
+        else
+        {
+            var request = new BtcMapSubmitRequest
+            {
+                Name = settings.BusinessName,
+                Url = settings.Url,
+                // Reverify-only path: OSM tags don't carry description, so the stored value
+                // is sent purely to satisfy the request shape. Form edits to DirectoryDescription
+                // flow through SubmitListing's directory leg, not here.
+                Description = listing.Description,
+                OsmNodeId = listing.OsmElementId,
+                OsmNodeType = listing.OsmElementType,
+                TagOnOsm = true,
+                SubmitToDirectory = false,
+                AcceptsLightning = acceptsLightning,
+                Address = BuildAddress(settings.HouseNumber, settings.Street, settings.City, settings.PostCode, settings.Country)
+            };
+
+            var response = await _apiClient.SubmitAsync(request);
+            if (response.Osm?.Skipped != null)
+                _logger.LogWarning("OSM leg skipped during update: {Reason}", response.Osm.Skipped);
+            else
+                newVersion = response.Osm?.NewVersion;
+        }
 
         await using var ctx = _dbContextFactory.CreateContext();
         var dbListing = await ctx.Listings.FirstAsync(l => l.Id == listing.Id);
-        if (response.Osm?.Skipped != null)
-            _logger.LogWarning("OSM leg skipped during update: {Reason}", response.Osm.Skipped);
-        else if (response.Osm?.NewVersion != null)
-            dbListing.OsmElementVersion = response.Osm.NewVersion.Value;
+        if (newVersion.HasValue)
+            dbListing.OsmElementVersion = newVersion.Value;
         dbListing.BusinessName = settings.BusinessName;
         dbListing.Category = settings.Category;
         dbListing.Url = settings.Url;
@@ -220,17 +342,32 @@ public class BtcMapService : IBtcMapService
         if (listing == null || listing.Status == ListingStatus.Unlisted)
             return;
 
-        var request = new BtcMapSubmitRequest
+        if (await StoreHasOsmToken(storeId))
         {
-            Name = listing.BusinessName,
-            Url = listing.Url,
-            Description = listing.Description,
-            OsmNodeId = listing.OsmElementId,
-            OsmNodeType = listing.OsmElementType,
-            UnlistFromOsm = true
-        };
-
-        await _apiClient.SubmitAsync(request);
+            try
+            {
+                await _osmApiClient.UnlistNodeAsync(storeId, listing.OsmElementId, listing.OsmElementType,
+                    listing.BusinessName, CancellationToken.None);
+            }
+            catch (OsmAuthException)
+            {
+                await _oauthRepo.ClearTokenOnlyAsync(storeId);
+                throw;
+            }
+        }
+        else
+        {
+            var request = new BtcMapSubmitRequest
+            {
+                Name = listing.BusinessName,
+                Url = listing.Url,
+                Description = listing.Description,
+                OsmNodeId = listing.OsmElementId,
+                OsmNodeType = listing.OsmElementType,
+                UnlistFromOsm = true
+            };
+            await _apiClient.SubmitAsync(request);
+        }
 
         await using var ctx = _dbContextFactory.CreateContext();
         var dbListing = await ctx.Listings.FirstAsync(l => l.Id == listing.Id);
@@ -250,27 +387,61 @@ public class BtcMapService : IBtcMapService
 
     public async Task ReverifyListing(BtcMapListing listing, bool acceptsLightning)
     {
-        var request = new BtcMapSubmitRequest
-        {
-            Name = listing.BusinessName,
-            Url = listing.Url,
-            Description = listing.Description,
-            OsmNodeId = listing.OsmElementId,
-            OsmNodeType = listing.OsmElementType,
-            TagOnOsm = true,
-            SubmitToDirectory = false,
-            AcceptsLightning = acceptsLightning,
-            Address = BuildAddress(listing.HouseNumber, listing.Street, listing.City, listing.PostCode, listing.Country)
-        };
+        int? newVersion = null;
 
-        var response = await _apiClient.SubmitAsync(request);
+        if (await StoreHasOsmToken(listing.StoreId))
+        {
+            var merchant = new BtcMapMerchant
+            {
+                Name = listing.BusinessName,
+                OsmCategory = listing.Category,
+                Url = listing.Url,
+                AcceptsLightning = acceptsLightning,
+                Latitude = listing.Latitude,
+                Longitude = listing.Longitude,
+                HouseNumber = listing.HouseNumber,
+                Street = listing.Street,
+                City = listing.City,
+                PostCode = listing.PostCode,
+                Country = listing.Country
+            };
+            try
+            {
+                newVersion = await _osmApiClient.ReverifyNodeAsync(
+                    listing.StoreId, listing.OsmElementId, listing.OsmElementType, merchant, CancellationToken.None);
+            }
+            catch (OsmAuthException)
+            {
+                await _oauthRepo.ClearTokenOnlyAsync(listing.StoreId);
+                throw;
+            }
+        }
+        else
+        {
+            var request = new BtcMapSubmitRequest
+            {
+                Name = listing.BusinessName,
+                Url = listing.Url,
+                Description = listing.Description,
+                OsmNodeId = listing.OsmElementId,
+                OsmNodeType = listing.OsmElementType,
+                TagOnOsm = true,
+                SubmitToDirectory = false,
+                AcceptsLightning = acceptsLightning,
+                Address = BuildAddress(listing.HouseNumber, listing.Street, listing.City, listing.PostCode, listing.Country)
+            };
+
+            var response = await _apiClient.SubmitAsync(request);
+            if (response.Osm?.Skipped != null)
+                _logger.LogWarning("OSM leg skipped during reverify: {Reason}", response.Osm.Skipped);
+            else
+                newVersion = response.Osm?.NewVersion;
+        }
 
         await using var ctx = _dbContextFactory.CreateContext();
         var dbListing = await ctx.Listings.FirstAsync(l => l.Id == listing.Id);
-        if (response.Osm?.Skipped != null)
-            _logger.LogWarning("OSM leg skipped during reverify: {Reason}", response.Osm.Skipped);
-        else if (response.Osm?.NewVersion != null)
-            dbListing.OsmElementVersion = response.Osm.NewVersion.Value;
+        if (newVersion.HasValue)
+            dbListing.OsmElementVersion = newVersion.Value;
         dbListing.LastVerifiedAt = DateTimeOffset.UtcNow;
         await ctx.SaveChangesAsync();
     }
