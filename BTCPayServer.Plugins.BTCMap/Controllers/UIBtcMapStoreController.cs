@@ -537,18 +537,22 @@ public class UIBtcMapStoreController : Controller
             vm.OsmState = OsmConnectionState.PendingExpired;
         }
 
-        if (oauth == null)
-        {
-            if (vm.OsmState == OsmConnectionState.NotConfigured)
-                vm.OsmState = OsmConnectionState.NotConfigured;
-            return;
-        }
+        if (oauth == null) return;
 
         vm.OsmUsername = oauth.OsmUsername;
         vm.OsmConnectedAt = oauth.OsmConnectedAt;
         vm.OsmClientIdMasked = MaskClientId(oauth.OsmClientId);
         vm.OsmCredentials.OsmClientId = oauth.OsmClientId;
         // Never echo the secret back into the form. Show masked indicator only.
+
+        // Data-protection key rotated: row's encrypted columns were unrecoverable and
+        // have just been cleared. Surface a one-time banner so the merchant knows why
+        // they need to re-paste credentials.
+        if (oauth.CredentialsReset && vm.OsmErrorKind == OsmConnectionErrorKind.None)
+        {
+            vm.OsmErrorKind = OsmConnectionErrorKind.Other;
+            vm.OsmErrorMessage = "OSM credentials were reset because the encryption key changed. Please re-paste your client_id and client_secret to reconnect.";
+        }
 
         // Only override OsmState if no error/expired flag was carried over from the callback.
         if (vm.OsmErrorKind == OsmConnectionErrorKind.None && vm.OsmState != OsmConnectionState.PendingExpired)

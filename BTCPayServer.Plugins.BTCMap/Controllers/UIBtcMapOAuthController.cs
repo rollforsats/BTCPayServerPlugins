@@ -65,10 +65,10 @@ public class UIBtcMapOAuthController : Controller
             return RedirectToStorePage(storeId);
         }
 
-        var stored = (oauth.PendingState ?? string.Empty).Trim();
-        var supplied = (state ?? string.Empty).Trim();
-        if (!CryptographicOperations.FixedTimeEquals(
-                Encoding.UTF8.GetBytes(stored), Encoding.UTF8.GetBytes(supplied)))
+        var storedBytes = Encoding.UTF8.GetBytes(oauth.PendingState ?? string.Empty);
+        var suppliedBytes = Encoding.UTF8.GetBytes(state ?? string.Empty);
+        if (storedBytes.Length != suppliedBytes.Length ||
+            !CryptographicOperations.FixedTimeEquals(storedBytes, suppliedBytes))
         {
             await _oauthRepo.ClearPendingStateAsync(storeId);
             TempData["OsmErrorKind"] = nameof(Models.OsmConnectionErrorKind.Other);

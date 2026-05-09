@@ -1,9 +1,11 @@
 using System;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 using BTCPayServer.Plugins.BTCMap.Data;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace BTCPayServer.Plugins.BTCMap.Services;
 
@@ -13,13 +15,16 @@ public class BtcMapStoreOAuthRepository : IBtcMapStoreOAuthRepository
 
     private readonly BtcMapDbContextFactory _dbContextFactory;
     private readonly IDataProtector _protector;
+    private readonly ILogger<BtcMapStoreOAuthRepository> _logger;
 
     public BtcMapStoreOAuthRepository(
         BtcMapDbContextFactory dbContextFactory,
-        IDataProtectionProvider dataProtectionProvider)
+        IDataProtectionProvider dataProtectionProvider,
+        ILogger<BtcMapStoreOAuthRepository> logger)
     {
         _dbContextFactory = dbContextFactory;
         _protector = dataProtectionProvider.CreateProtector(ProtectorPurpose);
+        _logger = logger;
     }
 
     public async Task<BtcMapStoreOAuthDecrypted> GetForStoreAsync(string storeId)
@@ -27,7 +32,14 @@ public class BtcMapStoreOAuthRepository : IBtcMapStoreOAuthRepository
         await using var ctx = _dbContextFactory.CreateContext();
         var row = await ctx.StoreOAuth.AsNoTracking().FirstOrDefaultAsync(r => r.StoreId == storeId);
         if (row == null) return null;
-        return Decrypt(row);
+
+        var decrypted = Decrypt(row, storeId, out var clientSecretCorrupted, out var accessTokenCorrupted);
+        if (clientSecretCorrupted || accessTokenCorrupted)
+        {
+            await ClearCorruptedAsync(storeId, clientSecretCorrupted, accessTokenCorrupted);
+            decrypted.CredentialsReset = true;
+        }
+        return decrypted;
     }
 
     public async Task UpsertAsync(string storeId, BtcMapStoreOAuthDecrypted state)
@@ -135,17 +147,54 @@ public class BtcMapStoreOAuthRepository : IBtcMapStoreOAuthRepository
         row.OsmDisconnectedAt = state.OsmDisconnectedAt;
     }
 
-    private BtcMapStoreOAuthDecrypted Decrypt(BtcMapStoreOAuth row) => new()
+    private BtcMapStoreOAuthDecrypted Decrypt(
+        BtcMapStoreOAuth row,
+        string storeId,
+        out bool clientSecretCorrupted,
+        out bool accessTokenCorrupted) => new()
     {
         OsmClientId = row.OsmClientId,
-        OsmClientSecret = string.IsNullOrEmpty(row.OsmClientSecretEncrypted)
-            ? null : _protector.Unprotect(row.OsmClientSecretEncrypted),
-        OsmAccessToken = string.IsNullOrEmpty(row.OsmAccessTokenEncrypted)
-            ? null : _protector.Unprotect(row.OsmAccessTokenEncrypted),
+        OsmClientSecret = TryUnprotect(row.OsmClientSecretEncrypted, storeId, "OsmClientSecret", out clientSecretCorrupted),
+        OsmAccessToken = TryUnprotect(row.OsmAccessTokenEncrypted, storeId, "OsmAccessToken", out accessTokenCorrupted),
         OsmUsername = row.OsmUsername,
         PendingState = row.PendingState,
         PendingStateExpiresAt = row.PendingStateExpiresAt,
         OsmConnectedAt = row.OsmConnectedAt,
         OsmDisconnectedAt = row.OsmDisconnectedAt
     };
+
+    // Returns null and sets corrupted=true if the data-protection key is unavailable
+    // (key rotated, container rebuilt without persistent volume). Caller is expected
+    // to clear the unrecoverable column so the row converges to NotConfigured.
+    private string TryUnprotect(string ciphertext, string storeId, string field, out bool corrupted)
+    {
+        corrupted = false;
+        if (string.IsNullOrEmpty(ciphertext)) return null;
+        try
+        {
+            return _protector.Unprotect(ciphertext);
+        }
+        catch (CryptographicException ex)
+        {
+            corrupted = true;
+            _logger.LogWarning(ex,
+                "Could not decrypt {Field} for store {StoreId} — data-protection key likely rotated; clearing field",
+                field, storeId);
+            return null;
+        }
+    }
+
+    private async Task ClearCorruptedAsync(string storeId, bool clearClientSecret, bool clearAccessToken)
+    {
+        await using var ctx = _dbContextFactory.CreateContext();
+        var row = await ctx.StoreOAuth.FirstOrDefaultAsync(r => r.StoreId == storeId);
+        if (row == null) return;
+        if (clearClientSecret) row.OsmClientSecretEncrypted = null;
+        if (clearAccessToken)
+        {
+            row.OsmAccessTokenEncrypted = null;
+            row.OsmUsername = null;
+        }
+        await ctx.SaveChangesAsync();
+    }
 }

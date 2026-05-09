@@ -65,6 +65,22 @@ public class UIBtcMapOAuthControllerTests
     }
 
     [Fact]
+    public async Task Callback_StateLengthMismatch_RejectsWithoutThrowing()
+    {
+        // FixedTimeEquals throws on unequal-length spans; ensure the controller
+        // length-checks first so an attacker can't trigger the throw.
+        var oauth = ValidPending();
+        var (controller, repo, auth) = MakeController(oauth);
+
+        var result = await controller.Callback(TestStoreId, "code", "short", null, null);
+
+        AssertRedirectsToStorePage(result);
+        Assert.Equal(nameof(Models.OsmConnectionErrorKind.Other), controller.TempData["OsmErrorKind"]);
+        Assert.True(repo.PendingCleared);
+        Assert.False(auth.ExchangeCalled);
+    }
+
+    [Fact]
     public async Task Callback_ExpiredPendingState_FlagsExpired()
     {
         var oauth = ValidPending(expiresAt: DateTimeOffset.UtcNow.AddMinutes(-1));

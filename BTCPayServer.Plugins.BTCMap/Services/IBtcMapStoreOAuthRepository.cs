@@ -17,6 +17,11 @@ public class BtcMapStoreOAuthDecrypted
     public DateTimeOffset? PendingStateExpiresAt { get; set; }
     public DateTimeOffset? OsmConnectedAt { get; set; }
     public DateTimeOffset? OsmDisconnectedAt { get; set; }
+
+    // True iff the row had encrypted credentials that could not be decrypted on this read
+    // (data-protection key rotated). The repository nulls the affected columns; this flag
+    // is the caller's signal to surface a "credentials were reset" banner.
+    public bool CredentialsReset { get; set; }
 }
 
 public interface IBtcMapStoreOAuthRepository
