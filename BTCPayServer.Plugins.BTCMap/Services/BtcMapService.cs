@@ -258,10 +258,15 @@ public class BtcMapService : IBtcMapService
         {
             if (osmId.HasValue)
             {
-                var newVersion = await _osmApiClient.UpdateNodeAsync(storeId, osmId.Value, osmType, merchant, ct);
+                var result = await _osmApiClient.UpdateNodeAsync(storeId, osmId.Value, osmType, merchant, ct);
                 listing.OsmElementId = osmId.Value;
                 listing.OsmElementType = osmType;
-                listing.OsmElementVersion = newVersion;
+                listing.OsmElementVersion = result.NewVersion;
+                // Source-of-truth for the local row's display name is the OSM name tag
+                // post-merge: preserves a curator's existing name when linking, falls
+                // back to the merchant-supplied name on previously-unnamed nodes.
+                if (!string.IsNullOrWhiteSpace(result.ResolvedName))
+                    listing.BusinessName = result.ResolvedName;
             }
             else
             {
@@ -284,14 +289,17 @@ public class BtcMapService : IBtcMapService
     public async Task UpdateListing(BtcMapListing listing, BtcMapStoreSettings settings, bool acceptsLightning)
     {
         int? newVersion = null;
+        string resolvedName = null;
 
         if (await StoreHasOsmToken(listing.StoreId))
         {
             var merchant = ToMerchant(listing, settings, acceptsLightning);
             try
             {
-                newVersion = await _osmApiClient.UpdateNodeAsync(
+                var result = await _osmApiClient.UpdateNodeAsync(
                     listing.StoreId, listing.OsmElementId, listing.OsmElementType, merchant, CancellationToken.None);
+                newVersion = result.NewVersion;
+                resolvedName = result.ResolvedName;
             }
             catch (OsmAuthException)
             {
@@ -328,7 +336,11 @@ public class BtcMapService : IBtcMapService
         var dbListing = await ctx.Listings.FirstAsync(l => l.Id == listing.Id);
         if (newVersion.HasValue)
             dbListing.OsmElementVersion = newVersion.Value;
-        dbListing.BusinessName = settings.BusinessName;
+        // OAuth path: OSM is source-of-truth (preserves curator name). Legacy bot
+        // path: no resolved name returned, so fall back to form value.
+        dbListing.BusinessName = !string.IsNullOrWhiteSpace(resolvedName)
+            ? resolvedName
+            : settings.BusinessName;
         dbListing.Category = settings.Category;
         dbListing.Url = settings.Url;
         dbListing.HouseNumber = settings.HouseNumber;

@@ -17,7 +17,7 @@ public class OsmTagBuilderTests
         bool acceptsLightning = false,
         string osmCategory = null,
         string url = null,
-        string name = "Test Cafe",
+        string name = "Bitcoin Cafe",
         string houseNumber = null,
         string street = null,
         string city = null,
@@ -30,8 +30,8 @@ public class OsmTagBuilderTests
             OsmCategory = osmCategory,
             Url = url,
             AcceptsLightning = acceptsLightning,
-            Latitude = 48.8566,
-            Longitude = 2.3522,
+            Latitude = 32.6838298,
+            Longitude = -117.1839771,
             HouseNumber = houseNumber,
             Street = street,
             City = city,
@@ -131,12 +131,12 @@ public class OsmTagBuilderTests
     public void Create_WritesAddressFields_WhenPresent()
     {
         var merge = BuilderAt(FixedClock).BuildMerge(MerchantWith(
-            houseNumber: "10", street: "Rue de Rivoli", city: "Paris", postCode: "75001", country: "FR"));
-        Assert.Equal("10", merge.SetTags["addr:housenumber"]);
-        Assert.Equal("Rue de Rivoli", merge.SetTags["addr:street"]);
-        Assert.Equal("Paris", merge.SetTags["addr:city"]);
-        Assert.Equal("75001", merge.SetTags["addr:postcode"]);
-        Assert.Equal("FR", merge.SetTags["addr:country"]);
+            houseNumber: "938", street: "Ocean Blvd", city: "Coronado", postCode: "92118", country: "US"));
+        Assert.Equal("938", merge.SetTags["addr:housenumber"]);
+        Assert.Equal("Ocean Blvd", merge.SetTags["addr:street"]);
+        Assert.Equal("Coronado", merge.SetTags["addr:city"]);
+        Assert.Equal("92118", merge.SetTags["addr:postcode"]);
+        Assert.Equal("US", merge.SetTags["addr:country"]);
     }
 
     [Fact]
@@ -223,5 +223,36 @@ public class OsmTagBuilderTests
         var merge = BuilderAt(FixedClock).BuildMerge(MerchantWith(phone: null), existing);
         Assert.DoesNotContain("phone", merge.RemoveTags);
         Assert.False(merge.SetTags.ContainsKey("phone"));
+    }
+
+    [Fact]
+    public void Create_WritesName_WhenNoExistingTags()
+    {
+        var merge = BuilderAt(FixedClock).BuildMerge(MerchantWith(name: "Form Cafe"));
+        Assert.Equal("Form Cafe", merge.SetTags["name"]);
+    }
+
+    [Fact]
+    public void Update_PreservesExistingName_WhenLinkingExistingNode()
+    {
+        var existing = new Dictionary<string, string> { ["name"] = "Curator's Cafe" };
+        var merge = BuilderAt(FixedClock).BuildMerge(MerchantWith(name: "Form Cafe"), existing);
+        Assert.False(merge.SetTags.ContainsKey("name"));
+    }
+
+    [Fact]
+    public void Update_WritesName_WhenExistingNameBlank()
+    {
+        var existing = new Dictionary<string, string> { ["name"] = "  " };
+        var merge = BuilderAt(FixedClock).BuildMerge(MerchantWith(name: "Form Cafe"), existing);
+        Assert.Equal("Form Cafe", merge.SetTags["name"]);
+    }
+
+    [Fact]
+    public void Update_WritesName_WhenExistingNameAbsent()
+    {
+        var existing = new Dictionary<string, string> { ["amenity"] = "cafe" };
+        var merge = BuilderAt(FixedClock).BuildMerge(MerchantWith(name: "Form Cafe"), existing);
+        Assert.Equal("Form Cafe", merge.SetTags["name"]);
     }
 }

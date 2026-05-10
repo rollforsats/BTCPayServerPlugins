@@ -24,7 +24,7 @@ public class OsmApiClientTests
         var client = MakeClient(http, changesets, withToken: TestToken);
 
         var result = await client.CreateNodeAsync(TestStoreId,
-            new BtcMapMerchant { Name = "Cafe", Latitude = 48.8566, Longitude = 2.3522 },
+            new BtcMapMerchant { Name = "Bitcoin Cafe", Latitude = 32.6838298, Longitude = -117.1839771 },
             CancellationToken.None);
 
         Assert.Equal(1234, result.ChangesetId);
@@ -50,10 +50,11 @@ public class OsmApiClientTests
 
         var client = MakeClient(http, changesets, withToken: TestToken);
 
-        var newVersion = await client.UpdateNodeAsync(TestStoreId, 100, "node",
-            new BtcMapMerchant { Name = "Cafe" }, CancellationToken.None);
+        var result = await client.UpdateNodeAsync(TestStoreId, 100, "node",
+            new BtcMapMerchant { Name = "Bitcoin Cafe" }, CancellationToken.None);
 
-        Assert.Equal(6, newVersion);
+        Assert.Equal(6, result.NewVersion);
+        Assert.Equal("Bitcoin Cafe", result.ResolvedName);
         Assert.Equal(1, changesets.OpenCallCount);
         Assert.True(changesets.Closed);
         // Two PUT attempts within the single changeset.
@@ -77,7 +78,7 @@ public class OsmApiClientTests
 
         await Assert.ThrowsAsync<OsmConflictException>(() =>
             client.UpdateNodeAsync(TestStoreId, 100, "node",
-                new BtcMapMerchant { Name = "Cafe" }, CancellationToken.None));
+                new BtcMapMerchant { Name = "Bitcoin Cafe" }, CancellationToken.None));
 
         Assert.True(changesets.Closed);
     }
@@ -97,19 +98,19 @@ public class OsmApiClientTests
 
         await Assert.ThrowsAsync<OsmAuthException>(() =>
             client.UpdateNodeAsync(TestStoreId, 100, "node",
-                new BtcMapMerchant { Name = "Cafe" }, CancellationToken.None));
+                new BtcMapMerchant { Name = "Bitcoin Cafe" }, CancellationToken.None));
     }
 
     [Fact]
     public async Task UnlistNode_NoBitcoinTags_ShortCircuitsWithoutChangeset()
     {
         var http = new StubHttp();
-        http.GetResponses["node/100"] = NodeXml(100, 5, ("name", "Cafe"));
+        http.GetResponses["node/100"] = NodeXml(100, 5, ("name", "Bitcoin Cafe"));
         var changesets = new StubChangesetManager(opensWithId: 999);
 
         var client = MakeClient(http, changesets, withToken: TestToken);
 
-        var result = await client.UnlistNodeAsync(TestStoreId, 100, "node", "Cafe", CancellationToken.None);
+        var result = await client.UnlistNodeAsync(TestStoreId, 100, "node", "Bitcoin Cafe", CancellationToken.None);
 
         Assert.True(result.AlreadyUnlisted);
         Assert.False(changesets.Opened);
@@ -123,14 +124,14 @@ public class OsmApiClientTests
         http.GetResponses["node/100"] = NodeXml(100, 5,
             ("currency:XBT", "yes"),
             ("payment:lightning", "yes"),
-            ("name", "Cafe"),
+            ("name", "Bitcoin Cafe"),
             ("amenity", "cafe"));
         http.PutResponses["node/100"] = "6";
         var changesets = new StubChangesetManager(opensWithId: 1234);
 
         var client = MakeClient(http, changesets, withToken: TestToken);
 
-        var result = await client.UnlistNodeAsync(TestStoreId, 100, "node", "Cafe", CancellationToken.None);
+        var result = await client.UnlistNodeAsync(TestStoreId, 100, "node", "Bitcoin Cafe", CancellationToken.None);
 
         Assert.False(result.AlreadyUnlisted);
         Assert.Equal(6, result.NewVersion);
@@ -155,7 +156,7 @@ public class OsmApiClientTests
 
         await Assert.ThrowsAsync<OsmNotConnectedException>(() =>
             client.CreateNodeAsync(TestStoreId,
-                new BtcMapMerchant { Name = "Cafe", Latitude = 1, Longitude = 1 }, CancellationToken.None));
+                new BtcMapMerchant { Name = "Bitcoin Cafe", Latitude = 32.6838298, Longitude = -117.1839771 }, CancellationToken.None));
     }
 
     private static OsmApiClient MakeClient(StubHttp http, StubChangesetManager changesets, string withToken)

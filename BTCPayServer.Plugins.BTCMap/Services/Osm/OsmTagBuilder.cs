@@ -32,7 +32,13 @@ public class OsmTagBuilder : IOsmTagBuilder
         // Always-write tags.
         merge.SetTags[CurrencyXbtKey] = "yes";
         merge.SetTags[CheckDateKey] = _utcNow().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        if (!string.IsNullOrWhiteSpace(merchant.Name))
+
+        // name: write on create, or only if the existing element doesn't already
+        // carry a non-empty one. Don't overwrite a curator's choice when linking.
+        var existingHasName = existingTags != null
+            && existingTags.TryGetValue("name", out var existingName)
+            && !string.IsNullOrWhiteSpace(existingName);
+        if (!existingHasName && !string.IsNullOrWhiteSpace(merchant.Name))
             merge.SetTags["name"] = merchant.Name.Trim();
 
         // amenity: write on create (no existing tags) or only if the existing element

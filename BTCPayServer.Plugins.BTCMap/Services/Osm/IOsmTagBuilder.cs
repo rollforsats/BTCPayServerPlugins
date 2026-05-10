@@ -5,7 +5,7 @@ namespace BTCPayServer.Plugins.BTCMap.Services.Osm;
 
 /// <summary>
 /// Pure-function tag merge for OSM elements. No I/O, no state. Deterministic given
-/// (merchant, existingTags, clock). Easiest possible thing to test exhaustively.
+/// (merchant, existingTags). Easiest possible thing to test exhaustively.
 /// </summary>
 public interface IOsmTagBuilder
 {

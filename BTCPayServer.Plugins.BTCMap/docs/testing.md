@@ -51,15 +51,15 @@ On each search request, the fake logs which bucket was hit and how many elements
 
 ```
 info: [FIXTURE:fresh-cafe] CheckExistingBitcoinTags() → 0 elements
-info: [FIXTURE:fresh-cafe] SearchNearby(name='Test Cafe') → 1 elements
+info: [FIXTURE:fresh-cafe] SearchNearby(name='Bitcoin Cafe') → 1 elements
 ```
 
 ### Form inputs used by all scenarios
 
-All scenarios are calibrated to a synthetic "fake Paris" search point:
+All scenarios are calibrated to a synthetic Coronado, CA search point (938 Ocean Blvd):
 
-- **Latitude:** `48.8566`
-- **Longitude:** `2.3522`
+- **Latitude:** `32.6838298`
+- **Longitude:** `-117.1839771`
 
 Enter those exact values in the BTC Map store page form. Distances in the search results are computed against this point.
 
@@ -77,15 +77,15 @@ BTCMAP_OVERPASS_SCENARIO=empty-everywhere ./dev.sh
 **Form inputs:**
 | Field | Value |
 |---|---|
-| Business Name | `Test Cafe` (anything) |
+| Business Name | `Bitcoin Cafe` (anything) |
 | Category | `cafe` |
-| Latitude | `48.8566` |
-| Longitude | `2.3522` |
+| Latitude | `32.6838298` |
+| Longitude | `-117.1839771` |
 
 **Expected UI:**
 - Page shows "No existing locations found near your coordinates."
 - "Create a New Location" section visible with a green **Create New OSM Node** button.
-- View the page source — the hidden `Settings.Latitude` and `Settings.Longitude` inputs must render with `.` decimal separators (`48.8566`, `2.3522`) regardless of OS locale. If they render with `,` (e.g. `48,8566`), bug 1 is not fixed.
+- View the page source — the hidden `Settings.Latitude` and `Settings.Longitude` inputs must render with `.` decimal separators (`32.6838298`, `-117.1839771`) regardless of OS locale. If they render with `,` (e.g. `32,6838298`), bug 1 is not fixed.
 
 **Happy path:** click Create New OSM Node. A pending `BtcMapListing` row is inserted, then `OsmApiClient.CreateNode()` is called against the real OSM dev server. If OAuth is connected this creates a real node and the listing transitions to `Active`. If OAuth isn't connected the listing is rolled back and you see an error banner — that's the controller's error-handling path.
 
@@ -103,19 +103,19 @@ BTCMAP_OVERPASS_SCENARIO=fresh-cafe ./dev.sh
 **Form inputs:**
 | Field | Value |
 |---|---|
-| Business Name | anything (e.g. `Test Cafe`) |
+| Business Name | anything (e.g. `Bitcoin Cafe`) |
 | Category | `cafe` |
-| Latitude | `48.8566` |
-| Longitude | `2.3522` |
+| Latitude | `32.6838298` |
+| Longitude | `-117.1839771` |
 
 **Expected UI:** one list item with:
-- Name heading: **Café de Flore**
+- Name heading: **Bitcoin Burgers**
 - Category line: `Amenity: cafe · node/1000001`
-- Address line: `172 Boulevard Saint-Germain, Paris, 75006, FR`
-- Coordinates + distance: `48.85720, 2.35310 · ~85 m away`
-- Button: solid blue **Link to this**
+- Address line: `1100 Orange Ave, Coronado, 92118, US`
+- Coordinates + distance: `32.68396, -117.18383 · ~20 m away`
+- Button: solid blue **Select this**
 
-**Happy path:** click **Link to this**. A `BtcMapListing` row is created pointing at `osmType=node`, `osmId=1000001`. The subsequent `OsmApiClient.GetElement()` call will fail with 404 because node 1000001 doesn't exist on the real OSM dev server — **this is expected**. The test covers UI + DB insert, not the actual OSM write. For full round-trip, edit `OverpassFixtureScenarios.cs` and substitute a real osmId from a node you previously created on the dev server.
+**Happy path:** click **Select this**. A `BtcMapListing` row is created pointing at `osmType=node`, `osmId=1000001`. The subsequent `OsmApiClient` call will fail with 404 because node 1000001 doesn't exist on the real OSM dev server — **this is expected**. The test covers UI + DB insert, not the actual OSM write. For full round-trip, edit `OverpassFixtureScenarios.cs` and substitute a real osmId from a node you previously created on the dev server.
 
 ---
 
@@ -133,31 +133,31 @@ BTCMAP_OVERPASS_SCENARIO=already-tagged ./dev.sh
 |---|---|
 | Business Name | anything |
 | Category | `seafood` |
-| Latitude | `48.8566` |
-| Longitude | `2.3522` |
+| Latitude | `32.6838298` |
+| Longitude | `-117.1839771` |
 
 **Expected UI:** exactly **one** list item (not two — this proves dedupe) with:
-- Name heading: **Satoshi's Sushi**
+- Name heading: **Bitcoin Sushi**
 - Category line: `Shop: seafood · node/2000001`
-- Address line: `12 Rue de Rivoli, Paris, 75004`
-- Coordinates + distance: `48.85640, 2.35180 · ~45 m away`
-- Yellow badge: **Already has Bitcoin tags**
+- Address line: `868 Orange Ave, San Diego, 92107, US`
+- Coordinates + distance: `32.68786, -117.17920 · ~530 m away`
+- Yellow badge: **Already on BTC Map**
 - Below the badge, muted small text: `currency:XBT=yes  payment:onchain=yes  payment:lightning=yes`
-- Button: **outline** blue **Link existing listing** (with tooltip on hover: "This location is already on BTC Map. Linking associates it with your BTCPay store for reverification.")
+- Button: **outline** blue **Link existing listing** (with tooltip on hover: "This location is already on BTC Map. Linking associates it with your BTCPay store.")
 
-**Dedupe failure signal:** if you see two "Satoshi's Sushi" items, the `HashSet<(string, long)>` dedupe in `UIBtcMapStoreController.Search` is broken.
+**Dedupe failure signal:** if you see two "Bitcoin Sushi" items, the `HashSet<(string, long)>` dedupe in `UIBtcMapStoreController.Search` is broken.
 
-**Happy path:** click **Link existing listing**. A `BtcMapListing` row is created even though the node was already tagged. This validates UX-5's core requirement: merchants can claim already-tagged nodes for reverification tracking.
+**Happy path:** click **Link existing listing**. A `BtcMapListing` row is created even though the node was already tagged. This validates UX-5's core requirement: merchants can claim already-tagged nodes for reverification tracking. The local DB row's `BusinessName` will be stamped with `Bitcoin Sushi` (OSM is source-of-truth post-link), not whatever the merchant typed in the form.
 
 ---
 
-### 4. `cascading-mixed`
+### 4. `cascading`
 
-**What it tests:** full cascading search (name empty → address hits), bug 3 merge-tagged-first ordering across multiple source lists, `way` type with `center` fallback via `EffectiveLat`/`EffectiveLon`, mixed category keys (`amenity` vs `tourism`).
+**What it tests:** full cascading search (name empty → address hits), bug 3 merge-tagged-first ordering across multiple source lists, mixed category keys (`amenity` vs `shop`).
 
 **How to run:**
 ```bash
-BTCMAP_OVERPASS_SCENARIO=cascading-mixed ./dev.sh
+BTCMAP_OVERPASS_SCENARIO=cascading ./dev.sh
 ```
 
 **Form inputs:**
@@ -165,39 +165,33 @@ BTCMAP_OVERPASS_SCENARIO=cascading-mixed ./dev.sh
 |---|---|
 | Business Name | anything |
 | Category | `bar` |
-| **Street** | `Rue de Rivoli` |
-| **City** | `Paris` |
-| Latitude | `48.8566` |
-| Longitude | `2.3522` |
+| **Street** | `Orange Ave` |
+| **City** | `Coronado` |
+| Latitude | `32.6838298` |
+| Longitude | `-117.1839771` |
 
 ⚠️ **Street and City are required** for this scenario. Without them, `BtcMapService.SearchNearby` skips the address cascade step and falls through to `SearchByCoordinates`, which is empty in this scenario — you'll see "No existing locations found."
 
-**Expected UI:** three list items in this exact order:
+**Expected UI:** two list items in this exact order:
 1. **Bitcoin Beach Bar** (tagged, from duplicates check)
    - `Amenity: bar · node/3000001`
-   - Yellow "Already has Bitcoin tags" badge
+   - Yellow "Already on BTC Map" badge
    - Existing tags line: `currency:XBT=yes  payment:lightning=yes`
    - Outline "Link existing listing" button
-2. **Le Procope** (untagged restaurant, from address search)
+2. **Bitcoin Brewery** (untagged restaurant, from address search)
    - `Amenity: restaurant · node/3000002`
-   - Address: `13 Rue de l'Ancienne Comédie, Paris, 75006`
-   - Solid "Link to this" button
-3. **Jardin du Luxembourg** (untagged `way` element, from address search)
-   - `Tourism: park · way/3000003`
-   - Address: `Paris`
-   - Coordinates from `Center` via `EffectiveLat`/`EffectiveLon` (`48.85590, 2.35080`)
-   - Solid "Link to this" button
+   - Address: `1134 Orange Ave, Coronado, 92118, US`
+   - Solid "Select this" button
 
 **Failure signals:**
 - Bitcoin Beach Bar not at the top → merge-tagged-first logic broken
-- Only two items → address cascade didn't fire (Street/City were blank)
-- Jardin du Luxembourg shows no coordinates or throws → `OverpassElement.EffectiveLat`/`EffectiveLon` isn't picking up `Center`
+- Only one item → address cascade didn't fire (Street/City were blank)
 
 **Log lines to watch for:**
 ```
-info: [FIXTURE:cascading-mixed] CheckExistingBitcoinTags() → 1 elements
-info: [FIXTURE:cascading-mixed] SearchNearby(name='...') → 0 elements
-info: [FIXTURE:cascading-mixed] SearchByAddress(street='Rue de Rivoli', city='Paris') → 2 elements
+info: [FIXTURE:cascading] CheckExistingBitcoinTags() → 1 elements
+info: [FIXTURE:cascading] SearchNearby(name='...') → 0 elements
+info: [FIXTURE:cascading] SearchByAddress(street='Orange Ave', city='Coronado') → 1 elements
 ```
 
 If the third line is missing, the cascade didn't escalate to the address step.
@@ -216,25 +210,25 @@ BTCMAP_OVERPASS_SCENARIO=multiple-nearby-untagged ./dev.sh
 **Form inputs:**
 | Field | Value |
 |---|---|
-| Business Name | anything (e.g. `My Bakery`) |
+| Business Name | anything (e.g. `Bitcoin Pizza`) |
 | Category | `bakery` |
-| Latitude | `48.8566` |
-| Longitude | `2.3522` |
+| Latitude | `32.6838298` |
+| Longitude | `-117.1839771` |
 
-**Expected UI:** four list items, each untagged (no yellow badge), each with a solid "Link to this" button:
+**Expected UI:** four list items, each untagged (no yellow badge), each with a solid "Select this" button:
 
-1. **Boulangerie Poilâne** — `Shop: bakery · node/4000001`, address `8 Rue du Cherche-Midi, Paris, 75006`, ~20 m away
-2. **Le Relais de l'Entrecôte** — `Amenity: restaurant · node/4000002`, address `20 Rue Saint-Benoît, Paris, 75006`, ~30 m away
-3. **Brasserie Lipp** — `Amenity: restaurant · node/4000003`, address `151 Boulevard Saint-Germain, Paris, 75006`, ~100 m away
-4. **Patisserie Stohrer** — `Shop: pastry · node/4000004`, address `51 Rue Montorgueil, Paris, 75002`, ~170 m away
+1. **Bitcoin Pizza** — `Shop: bakery · node/4000001`, address `1100 Orange Ave, Coronado, 92118`, ~20 m away
+2. **Bitcoin Coffee** — `Amenity: restaurant · node/4000002`, address `1134 Orange Ave, Coronado, 92118`, ~30 m away
+3. **Bitcoin Barbecue** — `Amenity: restaurant · node/4000003`, address `1107 Orange Ave, Coronado, 92118`, ~100 m away
+4. **Bitcoin Tacos** — `Shop: pastry · node/4000004`, address `1031 Orange Ave, Coronado, 92118`, ~170 m away
 
 **What to verify:**
 - All four items render without layout issues
 - Category labels show both `shop` and `amenity` keys correctly formatted (`Shop: bakery`, `Amenity: restaurant`, etc.)
 - Distances span a realistic range from ~20 m to ~170 m
-- No duplicate button behavior — each "Link to this" submits the correct `osmId`
+- No duplicate button behavior — each "Select this" submits the correct `osmId`
 
-**Happy path:** click **Link to this** on any item; confirm the correct `osmId` is recorded in the `BtcMapListing` row. Repeat with a different item to verify the forms don't bleed state between each other.
+**Happy path:** click **Select this** on any item; confirm the correct `osmId` is recorded in the `BtcMapListing` row. Repeat with a different item to verify the forms don't bleed state between each other.
 
 ---
 
@@ -250,29 +244,29 @@ BTCMAP_OVERPASS_SCENARIO=name-mismatch-fallback-to-address ./dev.sh
 **Form inputs:**
 | Field | Value |
 |---|---|
-| Business Name | `Satoshi Coffee Co` (the merchant's current BTCPay store name — **doesn't match OSM**) |
+| Business Name | `Bitcoin Cafe` (the merchant's current BTCPay store name — **doesn't match OSM**) |
 | Category | `cafe` |
-| **Street** | `Rue de Rivoli` |
-| **City** | `Paris` |
-| Latitude | `48.8566` |
-| Longitude | `2.3522` |
+| **Street** | `Orange Ave` |
+| **City** | `Coronado` |
+| Latitude | `32.6838298` |
+| Longitude | `-117.1839771` |
 
 ⚠️ **Street and City are required.** Name search returns empty on purpose; without Street and City the cascade falls through to `SearchByCoordinates` which is also empty in this scenario.
 
 **Expected UI:** one list item:
-- Name heading: **Coffee on 5th** *(note: this is NOT the name the merchant typed — it's the stale OSM record)*
+- Name heading: **Bitcoin Diner** *(note: this is NOT the name the merchant typed — it's the stale OSM record)*
 - Category line: `Amenity: cafe · node/5000001`
-- Address line: `5 Rue de Rivoli, Paris, 75004, FR`
+- Address line: `1134 Orange Ave, Coronado, 92118, US`
 - Coordinates + distance visible
-- Solid blue "Link to this" button
+- Solid blue "Select this" button
 
-**Why this matters:** the merchant sees a name that doesn't match what they typed, and they have to trust the address match to click Link. This is exactly how the cascade fallback plays out in the real world — it's a common case where UI clarity matters most.
+**Why this matters:** the merchant sees a name that doesn't match what they typed, and they have to trust the address match to click the button. After clicking, the local DB row's `BusinessName` is stamped with `Bitcoin Diner` (OSM source-of-truth), not `Bitcoin Cafe` from the form.
 
 **Log lines to watch for:**
 ```
 info: [FIXTURE:name-mismatch-fallback-to-address] CheckExistingBitcoinTags() → 0 elements
-info: [FIXTURE:name-mismatch-fallback-to-address] SearchNearby(name='Satoshi Coffee Co') → 0 elements
-info: [FIXTURE:name-mismatch-fallback-to-address] SearchByAddress(street='Rue de Rivoli', city='Paris') → 1 elements
+info: [FIXTURE:name-mismatch-fallback-to-address] SearchNearby(name='Bitcoin Cafe') → 0 elements
+info: [FIXTURE:name-mismatch-fallback-to-address] SearchByAddress(street='Orange Ave', city='Coronado') → 1 elements
 ```
 
 All three lines must appear — that's the full cascade executing as designed.
@@ -293,7 +287,7 @@ Startup succeeds. The first Search click throws:
 
 ```
 ArgumentException: Unknown BTCMAP_OVERPASS_SCENARIO 'bogus'.
-Valid values: empty-everywhere, fresh-cafe, already-tagged, cascading-mixed,
+Valid values: empty-everywhere, fresh-cafe, already-tagged, cascading,
 multiple-nearby-untagged, name-mismatch-fallback-to-address
 ```
 
@@ -351,7 +345,7 @@ Expected if you're using synthetic osmIds that don't exist on the real OSM dev s
 
 ## Adding a new scenario
 
-1. Add a new private method in `OverpassFixtureScenarios.cs` that returns an `OverpassScenario` record. Populate the four lists (`Duplicates`, `NameSearch`, `AddressSearch`, `CoordinatesSearch`) with `OverpassElement` instances. Keep coordinates within a few hundred metres of `(48.8566, 2.3522)` so distances render.
+1. Add a new private method in `OverpassFixtureScenarios.cs` that returns an `OverpassScenario` record. Populate the four lists (`Duplicates`, `NameSearch`, `AddressSearch`, `CoordinatesSearch`) with `OverpassElement` instances. Keep coordinates within a few hundred metres of `(32.6838298, -117.1839771)` so distances render.
 2. Add the scenario name to the `Names` array (for the help message on unknown scenarios).
 3. Add a new branch to the `Get()` switch.
 4. Document the scenario in this file: what it tests, form inputs required, expected UI, failure signals.

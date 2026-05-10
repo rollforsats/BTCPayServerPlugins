@@ -77,13 +77,16 @@ public class OsmApiClient : IOsmApiClient
         }
     }
 
-    public Task<int> UpdateNodeAsync(string storeId, long nodeId, string nodeType, BtcMapMerchant merchant, CancellationToken ct)
+    public Task<OsmUpdateResult> UpdateNodeAsync(string storeId, long nodeId, string nodeType, BtcMapMerchant merchant, CancellationToken ct)
         => UpdateNodeInternal(storeId, nodeId, nodeType, merchant, OsmChangesetManager.CommentUpdate, ct);
 
-    public Task<int> ReverifyNodeAsync(string storeId, long nodeId, string nodeType, BtcMapMerchant merchant, CancellationToken ct)
-        => UpdateNodeInternal(storeId, nodeId, nodeType, merchant, OsmChangesetManager.CommentReverify, ct);
+    public async Task<int> ReverifyNodeAsync(string storeId, long nodeId, string nodeType, BtcMapMerchant merchant, CancellationToken ct)
+    {
+        var result = await UpdateNodeInternal(storeId, nodeId, nodeType, merchant, OsmChangesetManager.CommentReverify, ct);
+        return result.NewVersion;
+    }
 
-    private async Task<int> UpdateNodeInternal(
+    private async Task<OsmUpdateResult> UpdateNodeInternal(
         string storeId, long nodeId, string nodeType, BtcMapMerchant merchant, string commentTemplate, CancellationToken ct)
     {
         var token = await GetTokenAsync(storeId);
@@ -106,6 +109,15 @@ public class OsmApiClient : IOsmApiClient
                 var merge = _tagBuilder.BuildMerge(merchant, existingTags);
                 ApplyMergeToElement(elementEl, merge);
 
+                // Resolve the name post-merge: if the builder wrote one, use it; else
+                // fall back to the existing tag (preserved). Null when the node has
+                // no name on either side.
+                string resolvedName = null;
+                if (merge.SetTags.TryGetValue("name", out var setName) && !string.IsNullOrWhiteSpace(setName))
+                    resolvedName = setName;
+                else if (existingTags.TryGetValue("name", out var existingName) && !string.IsNullOrWhiteSpace(existingName))
+                    resolvedName = existingName;
+
                 try
                 {
                     var body = await _http.PutXmlAsync(token, elementPath, elementDoc.ToString(), ct);
@@ -113,7 +125,7 @@ public class OsmApiClient : IOsmApiClient
                     _logger.LogInformation(
                         "Updated OSM element {ElementPath} -> newVersion={NewVersion} in changeset={ChangesetId} (attempt {Attempt})",
                         elementPath, newVersion, changesetId, attempt);
-                    return newVersion;
+                    return new OsmUpdateResult { NewVersion = newVersion, ResolvedName = resolvedName };
                 }
                 catch (OsmConflictException) when (attempt < MaxUpdateAttempts)
                 {

@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+using BTCPayServer.Plugins.BTCMap.Services.Osm.Exceptions;
 using Microsoft.Extensions.Logging;
 
 namespace BTCPayServer.Plugins.BTCMap.Services.Osm;
@@ -35,7 +36,12 @@ public class OsmChangesetManager : IOsmChangesetManager
                     new XElement("tag", new XAttribute("k", "source"), new XAttribute("v", SourceTag)))));
 
         var body = await _http.PutXmlAsync(accessToken, "changeset/create", xml.ToString(), ct);
-        var changesetId = long.Parse(body.Trim());
+        if (!long.TryParse((body ?? string.Empty).Trim(), out var changesetId))
+        {
+            _logger.LogError("OSM returned non-numeric changeset id body");
+            throw new OsmException(0, "changeset/create",
+                "OSM returned non-numeric changeset id", body);
+        }
         _logger.LogInformation("Opened OSM changeset id={ChangesetId}", changesetId);
         return changesetId;
     }
