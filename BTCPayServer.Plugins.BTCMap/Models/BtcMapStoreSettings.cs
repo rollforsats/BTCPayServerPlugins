@@ -37,6 +37,6 @@ public class BtcMapStoreSettings
     public string DirectoryTwitter { get; set; }
     public string DirectoryGithub { get; set; }
     public string DirectoryOnionUrl { get; set; }
-    public string DirectoryType { get; set; }
+    public string DirectoryType { get; set; } = "merchants";
     public string DirectorySubType { get; set; }
 }

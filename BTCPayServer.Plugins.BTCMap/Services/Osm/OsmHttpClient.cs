@@ -72,11 +72,24 @@ public class OsmHttpClient : IOsmHttpClient
         throw response.StatusCode switch
         {
             HttpStatusCode.Unauthorized => new OsmAuthException(path, body),
-            HttpStatusCode.Conflict => new OsmConflictException(path, body),
+            HttpStatusCode.Conflict => MapConflict(path, body),
             HttpStatusCode.TooManyRequests => new OsmRateLimitException(path, body),
             >= HttpStatusCode.InternalServerError => new OsmServerException((int)response.StatusCode, path, body),
             _ => new OsmException((int)response.StatusCode, path, $"OSM {(int)response.StatusCode} {path}: {body}")
         };
+    }
+
+    private static OsmException MapConflict(string path, string body)
+    {
+        // OSM uses 409 for two distinct conditions: element-version conflict (recoverable
+        // by refetching and retrying within the same changeset) and changeset closed/expired
+        // (non-recoverable; retrying within the same closed changeset is wasted attempts).
+        if (body.Contains("changeset", StringComparison.OrdinalIgnoreCase)
+            && (body.Contains("closed", StringComparison.OrdinalIgnoreCase)
+                || body.Contains("expired", StringComparison.OrdinalIgnoreCase)
+                || body.Contains("not open", StringComparison.OrdinalIgnoreCase)))
+            return new OsmChangesetClosedException(path, body);
+        return new OsmConflictException(path, body);
     }
 }
 

@@ -22,10 +22,17 @@ public class OsmAuthException : OsmException
     public OsmAuthException(string path, string body) : base(401, path, $"OSM 401 {path}", body) { }
 }
 
-/// <summary>409 conflict from a node update — the OSM element changed since we fetched it.</summary>
+/// <summary>409 conflict from a node update — the OSM element changed since we fetched it. Recoverable by refetching and retrying within the same changeset.</summary>
 public class OsmConflictException : OsmException
 {
     public OsmConflictException(string path, string body) : base(409, path, $"OSM 409 {path}", body) { }
+}
+
+/// <summary>409 from OSM where the changeset is closed/expired/not-open. Non-recoverable: retrying within the same closed changeset is wasted attempts.</summary>
+public class OsmChangesetClosedException : OsmException
+{
+    public OsmChangesetClosedException(string path, string body)
+        : base(409, path, $"OSM 409 {path} (changeset closed)", body) { }
 }
 
 /// <summary>429 rate-limited by OSM (per OAuth app, not per IP).</summary>

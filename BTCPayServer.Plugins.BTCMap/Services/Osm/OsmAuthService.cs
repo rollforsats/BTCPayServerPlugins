@@ -86,21 +86,35 @@ public class OsmAuthService : IOsmAuthService
             throw new OsmTokenExchangeException((int)response.StatusCode, error, description, body);
         }
 
-        using var doc = JsonDocument.Parse(body);
-        if (!doc.RootElement.TryGetProperty("access_token", out var tokenProp) ||
-            tokenProp.ValueKind != JsonValueKind.String)
+        JsonDocument doc;
+        try
         {
-            _logger.LogWarning("OSM token response missing access_token field");
-            throw new OsmTokenExchangeException(
-                (int)response.StatusCode, "missing_token",
-                "Response missing access_token field", body);
+            doc = JsonDocument.Parse(body);
         }
-        var token = tokenProp.GetString();
-        if (string.IsNullOrEmpty(token))
+        catch (JsonException ex)
+        {
+            _logger.LogError(ex, "OSM token response contains invalid JSON");
             throw new OsmTokenExchangeException(
-                (int)response.StatusCode, "empty_token",
-                "Empty access_token in response", body);
-        return token;
+                (int)response.StatusCode, "invalid_json",
+                "Response body is not valid JSON", body);
+        }
+        using (doc)
+        {
+            if (!doc.RootElement.TryGetProperty("access_token", out var tokenProp) ||
+                tokenProp.ValueKind != JsonValueKind.String)
+            {
+                _logger.LogWarning("OSM token response missing access_token field");
+                throw new OsmTokenExchangeException(
+                    (int)response.StatusCode, "missing_token",
+                    "Response missing access_token field", body);
+            }
+            var token = tokenProp.GetString();
+            if (string.IsNullOrEmpty(token))
+                throw new OsmTokenExchangeException(
+                    (int)response.StatusCode, "empty_token",
+                    "Empty access_token in response", body);
+            return token;
+        }
     }
 
     public async Task<string> GetDisplayNameAsync(string accessToken, CancellationToken ct)
@@ -123,16 +137,30 @@ public class OsmAuthService : IOsmAuthService
                 $"OSM {(int)response.StatusCode} /api/0.6/user/details.json", body);
         }
 
-        using var doc = JsonDocument.Parse(body);
-        if (!doc.RootElement.TryGetProperty("user", out var userProp) ||
-            !userProp.TryGetProperty("display_name", out var nameProp))
+        JsonDocument doc;
+        try
         {
-            _logger.LogWarning("OSM /api/0.6/user/details.json missing user.display_name");
+            doc = JsonDocument.Parse(body);
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogError(ex, "OSM user/details response contains invalid JSON");
             throw new OsmException((int)response.StatusCode,
                 "/api/0.6/user/details.json",
-                "Response missing user.display_name", body);
+                "Response body is not valid JSON", body);
         }
-        return nameProp.GetString() ?? "Unknown";
+        using (doc)
+        {
+            if (!doc.RootElement.TryGetProperty("user", out var userProp) ||
+                !userProp.TryGetProperty("display_name", out var nameProp))
+            {
+                _logger.LogWarning("OSM /api/0.6/user/details.json missing user.display_name");
+                throw new OsmException((int)response.StatusCode,
+                    "/api/0.6/user/details.json",
+                    "Response missing user.display_name", body);
+            }
+            return nameProp.GetString() ?? "Unknown";
+        }
     }
 
     public async Task RevokeAsync(string clientId, string clientSecret, string accessToken, CancellationToken ct)

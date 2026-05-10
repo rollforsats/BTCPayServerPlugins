@@ -84,6 +84,30 @@ public class OsmApiClientTests
     }
 
     [Fact]
+    public async Task UpdateNode_ChangesetClosed_DoesNotRetry_ButStillClosesChangeset()
+    {
+        var http = new StubHttp();
+        http.GetResponses["node/100"] = NodeXml(100, 5, ("currency:XBT", "yes"));
+        // Single closed-changeset 409 — must NOT retry (would be wasted attempts within
+        // the same closed changeset). Sequence has only one entry; a second PUT would
+        // throw "no PUT stub" via the StubHttp fallback and surface as the wrong error.
+        http.PutSequence["node/100"] = new Queue<Func<string>>(new Func<string>[]
+        {
+            () => throw new OsmChangesetClosedException("PUT node/100", "The changeset 999 was closed at ...")
+        });
+        var changesets = new StubChangesetManager(opensWithId: 999);
+
+        var client = MakeClient(http, changesets, withToken: TestToken);
+
+        await Assert.ThrowsAsync<OsmChangesetClosedException>(() =>
+            client.UpdateNodeAsync(TestStoreId, 100, "node",
+                new BtcMapMerchant { Name = "Bitcoin Cafe" }, CancellationToken.None));
+
+        Assert.Single(http.PutCalls.FindAll(p => p == "node/100"));
+        Assert.True(changesets.Closed);
+    }
+
+    [Fact]
     public async Task UpdateNode_PropagatesAuthExceptionImmediately()
     {
         var http = new StubHttp();
