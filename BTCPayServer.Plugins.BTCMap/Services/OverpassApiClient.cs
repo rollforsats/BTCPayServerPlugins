@@ -36,10 +36,14 @@ public class OverpassApiClient : IOverpassApiClient
         var latStr = lat.ToString(CultureInfo.InvariantCulture);
         var lonStr = lon.ToString(CultureInfo.InvariantCulture);
 
+        // Picker is node-only: ~99% of merchant addresses are nodes, and the writer
+        // never creates ways/relations. Surfacing only nodes keeps the picker honest
+        // about what the merchant can link to. Existing way-typed listings remain
+        // updateable through OsmApiClient (writer stays permissive).
         var query = $"""
             [out:json][timeout:25];
-            nwr["name"~"{escapedName}",i](around:{radiusMeters},{latStr},{lonStr});
-            out body center;
+            node["name"~"{escapedName}",i](around:{radiusMeters},{latStr},{lonStr});
+            out body;
             """;
 
         return await ExecuteQuery(query);
@@ -54,8 +58,8 @@ public class OverpassApiClient : IOverpassApiClient
 
         var query = $"""
             [out:json][timeout:25];
-            nwr["addr:street"~"{escapedStreet}",i]["addr:city"~"{escapedCity}",i](around:{radiusMeters},{latStr},{lonStr});
-            out body center;
+            node["addr:street"~"{escapedStreet}",i]["addr:city"~"{escapedCity}",i](around:{radiusMeters},{latStr},{lonStr});
+            out body;
             """;
 
         return await ExecuteQuery(query);
@@ -68,8 +72,8 @@ public class OverpassApiClient : IOverpassApiClient
 
         var query = $"""
             [out:json][timeout:25];
-            nwr["name"](around:{radiusMeters},{latStr},{lonStr});
-            out body center;
+            node["name"](around:{radiusMeters},{latStr},{lonStr});
+            out body;
             """;
 
         return await ExecuteQuery(query);
@@ -82,8 +86,8 @@ public class OverpassApiClient : IOverpassApiClient
 
         var query = $"""
             [out:json][timeout:25];
-            nwr["currency:XBT"="yes"](around:50,{latStr},{lonStr});
-            out body center;
+            node["currency:XBT"="yes"](around:50,{latStr},{lonStr});
+            out body;
             """;
 
         return await ExecuteQuery(query);

@@ -17,18 +17,18 @@ public record OverpassScenario(
 
 public static class OverpassFixtureScenarios
 {
-    // Synthetic "fake Paris" search point. All scenario elements are positioned near
-    // this so the distance rendering in SearchResults.cshtml produces sensible values.
-    // Enter these exact coordinates in the BTC Map form when testing.
-    public const double SearchLat = 48.8566;
-    public const double SearchLon = 2.3522;
+    // Synthetic Coronado, CA search point (938 Ocean Blvd). All scenario elements are
+    // positioned near this so the distance rendering in SearchResults.cshtml produces
+    // sensible values. Enter these exact coordinates in the BTC Map form when testing.
+    public const double SearchLat = 32.6838298;
+    public const double SearchLon = -117.1839771;
 
     public static readonly IReadOnlyList<string> Names = new[]
     {
         "empty-everywhere",
         "fresh-cafe",
         "already-tagged",
-        "cascading-mixed",
+        "cascading",
         "multiple-nearby-untagged",
         "name-mismatch-fallback-to-address"
     };
@@ -38,7 +38,7 @@ public static class OverpassFixtureScenarios
         "empty-everywhere" => EmptyEverywhere(),
         "fresh-cafe" => FreshCafe(),
         "already-tagged" => AlreadyTagged(),
-        "cascading-mixed" => CascadingMixed(),
+        "cascading" => Cascading(),
         "multiple-nearby-untagged" => MultipleNearbyUntagged(),
         "name-mismatch-fallback-to-address" => NameMismatchFallbackToAddress(),
         _ => throw new ArgumentException(
@@ -59,18 +59,18 @@ public static class OverpassFixtureScenarios
             {
                 Type = "node",
                 Id = 1000001,
-                Lat = 48.85720,
-                Lon = 2.35310,
+                Lat = 32.6839570,
+                Lon = -117.1838260,
                 Tags = new Dictionary<string, string>
                 {
-                    ["name"] = "Café de Flore",
+                    ["name"] = "Bitcoin Burgers",
                     ["amenity"] = "cafe",
-                    ["addr:housenumber"] = "172",
-                    ["addr:street"] = "Boulevard Saint-Germain",
-                    ["addr:city"] = "Paris",
-                    ["addr:postcode"] = "75006",
-                    ["addr:country"] = "FR",
-                    ["opening_hours"] = "Mo-Su 07:00-02:00"
+                    ["addr:housenumber"] = "1100",
+                    ["addr:street"] = "Orange Ave",
+                    ["addr:city"] = "Coronado",
+                    ["addr:postcode"] = "92118",
+                    ["addr:country"] = "US",
+                    ["opening_hours"] = "Mo-Su 07:00-22:00"
                 }
             }
         },
@@ -81,21 +81,21 @@ public static class OverpassFixtureScenarios
     {
         // Same element returned by both Duplicates and NameSearch so the dedupe
         // logic in UIBtcMapStoreController.Search has something to collapse.
-        var satoshisSushi = new OverpassElement
+        var bitcoinSushi = new OverpassElement
         {
             Type = "node",
             Id = 2000001,
-            Lat = 48.85640,
-            Lon = 2.35180,
+            Lat = 32.6878558,
+            Lon = -117.1792045,
             Tags = new Dictionary<string, string>
             {
-                ["name"] = "Satoshi's Sushi",
+                ["name"] = "Bitcoin Sushi",
                 ["shop"] = "seafood",
-                ["addr:housenumber"] = "12",
-                ["addr:street"] = "Rue de Rivoli",
-                ["addr:city"] = "Paris",
-                ["addr:postcode"] = "75004",
-                ["addr:country"] = "FR",
+                ["addr:housenumber"] = "868",
+                ["addr:street"] = "Orange Ave",
+                ["addr:city"] = "San Diego",
+                ["addr:postcode"] = "92107",
+                ["addr:country"] = "US",
                 ["currency:XBT"] = "yes",
                 ["payment:onchain"] = "yes",
                 ["payment:lightning"] = "yes",
@@ -104,27 +104,27 @@ public static class OverpassFixtureScenarios
         };
 
         return new(
-            Duplicates: new() { satoshisSushi },
-            NameSearch: new() { satoshisSushi },
+            Duplicates: new() { bitcoinSushi },
+            NameSearch: new() { bitcoinSushi },
             AddressSearch: new(),
             CoordinatesSearch: new());
     }
 
-    private static OverpassScenario CascadingMixed() => new(
+    private static OverpassScenario Cascading() => new(
         Duplicates: new()
         {
             new OverpassElement
             {
                 Type = "node",
                 Id = 3000001,
-                Lat = 48.85700,
-                Lon = 2.35150,
+                Lat = 32.6839570,
+                Lon = -117.1838260,
                 Tags = new Dictionary<string, string>
                 {
                     ["name"] = "Bitcoin Beach Bar",
                     ["amenity"] = "bar",
-                    ["addr:city"] = "Paris",
-                    ["addr:country"] = "FR",
+                    ["addr:city"] = "Coronado",
+                    ["addr:country"] = "US",
                     ["currency:XBT"] = "yes",
                     ["payment:lightning"] = "yes"
                 }
@@ -137,39 +137,26 @@ public static class OverpassFixtureScenarios
             {
                 Type = "node",
                 Id = 3000002,
-                Lat = 48.85680,
-                Lon = 2.35230,
+                Lat = 32.6836949,
+                Lon = -117.1836995,
                 Tags = new Dictionary<string, string>
                 {
-                    ["name"] = "Le Procope",
+                    ["name"] = "Bitcoin Brewery",
                     ["amenity"] = "restaurant",
-                    ["addr:housenumber"] = "13",
-                    ["addr:street"] = "Rue de l'Ancienne Comédie",
-                    ["addr:city"] = "Paris",
-                    ["addr:postcode"] = "75006",
-                    ["addr:country"] = "FR"
-                }
-            },
-            new OverpassElement
-            {
-                Type = "way",
-                Id = 3000003,
-                // No direct Lat/Lon — Center is used via OverpassElement.EffectiveLat/EffectiveLon
-                Center = new OverpassCenter { Lat = 48.85590, Lon = 2.35080 },
-                Tags = new Dictionary<string, string>
-                {
-                    ["name"] = "Jardin du Luxembourg",
-                    ["tourism"] = "park",
-                    ["addr:city"] = "Paris",
-                    ["addr:country"] = "FR"
+                    ["addr:housenumber"] = "1134",
+                    ["addr:street"] = "Orange Ave",
+                    ["addr:city"] = "Coronado",
+                    ["addr:postcode"] = "92118",
+                    ["addr:country"] = "US"
                 }
             }
         },
         CoordinatesSearch: new());
 
-    // Four different untagged businesses within ~150m of the search point. Tests the
+    // Four different untagged businesses within ~170m of the search point. Tests the
     // realistic dense-city case where multiple nearby POIs match a business-name query
-    // and the merchant has to pick the right one.
+    // and the merchant has to pick the right one. Coordinates and bearings are real;
+    // distances render on the picker as ~20 m, ~30 m, ~100 m, ~170 m.
     private static OverpassScenario MultipleNearbyUntagged() => new(
         Duplicates: new(),
         NameSearch: new()
@@ -178,68 +165,68 @@ public static class OverpassFixtureScenarios
             {
                 Type = "node",
                 Id = 4000001,
-                Lat = 48.85680,
-                Lon = 2.35240,
+                Lat = 32.6839570,
+                Lon = -117.1838260,
                 Tags = new Dictionary<string, string>
                 {
-                    ["name"] = "Boulangerie Poilâne",
+                    ["name"] = "Bitcoin Pizza",
                     ["shop"] = "bakery",
-                    ["addr:housenumber"] = "8",
-                    ["addr:street"] = "Rue du Cherche-Midi",
-                    ["addr:city"] = "Paris",
-                    ["addr:postcode"] = "75006",
-                    ["addr:country"] = "FR"
+                    ["addr:housenumber"] = "1100",
+                    ["addr:street"] = "Orange Ave",
+                    ["addr:city"] = "Coronado",
+                    ["addr:postcode"] = "92118",
+                    ["addr:country"] = "US"
                 }
             },
             new OverpassElement
             {
                 Type = "node",
                 Id = 4000002,
-                Lat = 48.85720,
-                Lon = 2.35190,
+                Lat = 32.6836949,
+                Lon = -117.1836995,
                 Tags = new Dictionary<string, string>
                 {
-                    ["name"] = "Le Relais de l'Entrecôte",
+                    ["name"] = "Bitcoin Coffee",
                     ["amenity"] = "restaurant",
-                    ["addr:housenumber"] = "20",
-                    ["addr:street"] = "Rue Saint-Benoît",
-                    ["addr:city"] = "Paris",
-                    ["addr:postcode"] = "75006",
-                    ["addr:country"] = "FR"
+                    ["addr:housenumber"] = "1134",
+                    ["addr:street"] = "Orange Ave",
+                    ["addr:city"] = "Coronado",
+                    ["addr:postcode"] = "92118",
+                    ["addr:country"] = "US"
                 }
             },
             new OverpassElement
             {
                 Type = "node",
                 Id = 4000003,
-                Lat = 48.85610,
-                Lon = 2.35300,
+                Lat = 32.6829847,
+                Lon = -117.1843425,
                 Tags = new Dictionary<string, string>
                 {
-                    ["name"] = "Brasserie Lipp",
+                    ["name"] = "Bitcoin Barbecue",
                     ["amenity"] = "restaurant",
-                    ["addr:housenumber"] = "151",
-                    ["addr:street"] = "Boulevard Saint-Germain",
-                    ["addr:city"] = "Paris",
-                    ["addr:postcode"] = "75006",
-                    ["addr:country"] = "FR"
+                    ["addr:housenumber"] = "1107",
+                    ["addr:street"] = "Orange Ave",
+                    ["addr:city"] = "Coronado",
+                    ["addr:postcode"] = "92118",
+                    ["addr:country"] = "US"
                 }
             },
             new OverpassElement
             {
                 Type = "node",
                 Id = 4000004,
-                Lat = 48.85590,
-                Lon = 2.35100,
+                Lat = 32.6848125,
+                Lon = -117.1853686,
                 Tags = new Dictionary<string, string>
                 {
-                    ["name"] = "Patisserie Stohrer",
+                    ["name"] = "Bitcoin Tacos",
                     ["shop"] = "pastry",
-                    ["addr:housenumber"] = "51",
-                    ["addr:street"] = "Rue Montorgueil",
-                    ["addr:city"] = "Paris",
-                    ["addr:postcode"] = "75002",
-                    ["addr:country"] = "FR"
+                    ["addr:housenumber"] = "1031",
+                    ["addr:street"] = "Orange Ave",
+                    ["addr:city"] = "Coronado",
+                    ["addr:postcode"] = "92118",
+                    ["addr:country"] = "US"
                 }
             }
         },
@@ -259,19 +246,19 @@ public static class OverpassFixtureScenarios
             {
                 Type = "node",
                 Id = 5000001,
-                Lat = 48.85650,
-                Lon = 2.35200,
+                Lat = 32.6836949,
+                Lon = -117.1836995,
                 Tags = new Dictionary<string, string>
                 {
-                    // Merchant typed "Satoshi Coffee Co" in BTCPay; OSM still has the
+                    // Merchant typed "Bitcoin Cafe" in BTCPay; OSM still has the
                     // pre-rebrand name. Name search missed — address cascade found it.
-                    ["name"] = "Coffee on 5th",
+                    ["name"] = "Bitcoin Diner",
                     ["amenity"] = "cafe",
-                    ["addr:housenumber"] = "5",
-                    ["addr:street"] = "Rue de Rivoli",
-                    ["addr:city"] = "Paris",
-                    ["addr:postcode"] = "75004",
-                    ["addr:country"] = "FR",
+                    ["addr:housenumber"] = "1134",
+                    ["addr:street"] = "Orange Ave",
+                    ["addr:city"] = "Coronado",
+                    ["addr:postcode"] = "92118",
+                    ["addr:country"] = "US",
                     ["opening_hours"] = "Mo-Fr 07:00-19:00; Sa-Su 08:00-18:00"
                 }
             }

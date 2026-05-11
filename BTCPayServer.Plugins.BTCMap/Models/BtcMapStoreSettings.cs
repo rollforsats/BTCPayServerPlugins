@@ -16,6 +16,9 @@ public class BtcMapStoreSettings
     public string PostCode { get; set; }
     public string Country { get; set; }
 
+    [Phone]
+    public string Phone { get; set; }
+
     [Required]
     [Range(-90, 90)]
     public double? Latitude { get; set; }
@@ -34,6 +37,6 @@ public class BtcMapStoreSettings
     public string DirectoryTwitter { get; set; }
     public string DirectoryGithub { get; set; }
     public string DirectoryOnionUrl { get; set; }
-    public string DirectoryType { get; set; }
+    public string DirectoryType { get; set; } = "merchants";
     public string DirectorySubType { get; set; }
 }

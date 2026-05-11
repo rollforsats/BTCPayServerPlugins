@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 
 namespace BTCPayServer.Plugins.BTCMap.Services;
 
-public class DirectoryListingChecker
+public class DirectoryListingChecker : IDirectoryListingChecker
 {
     private const string MerchantsJsonUrl =
         "btcpayserver/directory.btcpayserver.org/master/src/data/merchants.json";

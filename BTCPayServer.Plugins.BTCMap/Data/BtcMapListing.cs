@@ -21,6 +21,7 @@ public class BtcMapListing
     public string City { get; set; }
     public string PostCode { get; set; }
     public string Country { get; set; }
+    public string Phone { get; set; }
     public bool AcceptsLightning { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset LastVerifiedAt { get; set; }

@@ -11,6 +11,8 @@ for csproj in "$REPO_ROOT"/BTCPayServer.Plugins.*/BTCPayServer.Plugins.*.csproj;
 
     # Skip the template
     [ "$NAME" = "BTCPayServer.Plugins.Template" ] && continue
+    # Skip test projects — they aren't plugins
+    case "$NAME" in *.Tests) continue;; esac
 
     echo "Building $NAME..."
     dotnet build "$(dirname "$csproj")"

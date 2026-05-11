@@ -37,4 +37,8 @@
     <ProjectReference Include="..\btcpayserver\BTCPayServer\BTCPayServer.csproj" />
     <EmbeddedResource Include="Resources\**" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="BTCPayServer.Plugins.BTCMap.Tests" />
+  </ItemGroup>
 </Project>

@@ -49,10 +49,25 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("Description")
+                        .HasColumnType("text");
+
+                    b.Property<string>("DirectoryPrUrl")
+                        .HasColumnType("text");
+
+                    b.Property<string>("DirectorySubType")
+                        .HasColumnType("text");
+
                     b.Property<DateTimeOffset?>("DirectorySubmittedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("DirectorySubmittedUrl")
+                        .HasColumnType("text");
+
+                    b.Property<string>("DirectoryType")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Github")
                         .HasColumnType("text");
 
                     b.Property<string>("HouseNumber")
@@ -67,6 +82,9 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
                     b.Property<double>("Longitude")
                         .HasColumnType("double precision");
 
+                    b.Property<string>("OnionUrl")
+                        .HasColumnType("text");
+
                     b.Property<long>("OsmElementId")
                         .HasColumnType("bigint");
 
@@ -75,6 +93,9 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
 
                     b.Property<int>("OsmElementVersion")
                         .HasColumnType("integer");
+
+                    b.Property<string>("Phone")
+                        .HasColumnType("text");
 
                     b.Property<string>("PostCode")
                         .HasColumnType("text");
@@ -89,6 +110,12 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
                     b.Property<string>("Street")
                         .HasColumnType("text");
 
+                    b.Property<string>("Twitter")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Url")
+                        .HasColumnType("text");
+
                     b.HasKey("Id");
 
                     b.HasIndex("StoreId")
@@ -97,6 +124,47 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
                     b.HasIndex("Status", "LastVerifiedAt");
 
                     b.ToTable("Listings", "BTCPayServer.Plugins.BTCMap");
+                });
+
+            modelBuilder.Entity("BTCPayServer.Plugins.BTCMap.Data.BtcMapStoreOAuth", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("OsmConnectedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("OsmDisconnectedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("OsmAccessTokenEncrypted")
+                        .HasColumnType("text");
+
+                    b.Property<string>("OsmClientId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("OsmClientSecretEncrypted")
+                        .HasColumnType("text");
+
+                    b.Property<string>("OsmUsername")
+                        .HasColumnType("text");
+
+                    b.Property<string>("PendingState")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("PendingStateExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("StoreId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StoreId")
+                        .IsUnique();
+
+                    b.ToTable("StoreOAuth", "BTCPayServer.Plugins.BTCMap");
                 });
 #pragma warning restore 612, 618
         }
