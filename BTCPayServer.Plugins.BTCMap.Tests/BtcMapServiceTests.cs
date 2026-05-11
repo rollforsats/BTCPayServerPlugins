@@ -114,6 +114,36 @@ public class BtcMapServiceTests
         Assert.Null(persisted.DirectoryPrUrl);
     }
 
+    [Fact]
+    public async Task SubmitListing_DirectoryThrows_SaveAlsoThrows_OriginalExceptionWins()
+    {
+        // Pins the round-3 fix: when the directory leg throws AND the catch-block
+        // SaveChangesAsync also fails (DB blip, concurrency, EF validation), the
+        // original PluginBuilderApiException MUST still propagate so the controller's
+        // typed catch renders the error. Without the inner try/catch, the EF
+        // exception would replace the in-flight one on the call stack.
+        const string storeId = "store-blocker-save-fails";
+        var factory = TestDbFactory.Create(onSave: () => throw new DbUpdateException("simulated EF failure"));
+        var osm = new StubOsmApiClient
+        {
+            OnCreate = (sid, _, _) => Task.FromResult(new OsmCreateResult { NodeId = 9002, ChangesetId = 1, Version = 1 })
+        };
+        var api = new StubPluginBuilderApiClient
+        {
+            OnSubmit = _ => throw new PluginBuilderApiException(502, "directory upstream 502")
+        };
+        var oauthRepo = new ConnectedOAuthRepo(storeId);
+        var service = new BtcMapService(factory, new StubListingRepository(),
+            api, new StubOverpassApiClient(), osm, oauthRepo, new NullLogger<BtcMapService>());
+
+        var settings = NewSettingsWithDirectory();
+        var ex = await Assert.ThrowsAsync<PluginBuilderApiException>(
+            () => service.SubmitListing(storeId, settings,
+                acceptsLightning: true, submitToDirectory: true, osmType: null, osmId: null));
+        Assert.Equal(502, ex.StatusCode);
+        Assert.Equal("directory upstream 502", ex.Message);
+    }
+
     private static BtcMapStoreSettings NewSettingsWithDirectory() => new()
     {
         BusinessName = "Bitcoin Cafe",
@@ -202,28 +232,51 @@ public class BtcMapServiceTests
 
 /// <summary>
 /// In-memory BtcMapDbContextFactory for unit tests. Each Create() returns a factory
-/// scoped to a unique database name so parallel tests don't share state.
+/// scoped to a unique database name so parallel tests don't share state. The optional
+/// onSave hook fires before each SaveChangesAsync — pass a throwing func to simulate
+/// EF failures (e.g., concurrency conflicts, DbUpdateException).
 /// </summary>
 internal static class TestDbFactory
 {
-    public static BtcMapDbContextFactory Create()
-        => new InMemoryFactory(Guid.NewGuid().ToString("N"));
+    public static BtcMapDbContextFactory Create(Func<Task> onSave = null)
+        => new InMemoryFactory(Guid.NewGuid().ToString("N"), onSave);
 
     private sealed class InMemoryFactory : BtcMapDbContextFactory
     {
         private readonly string _dbName;
+        private readonly Func<Task> _onSave;
 
-        public InMemoryFactory(string dbName)
+        public InMemoryFactory(string dbName, Func<Task> onSave)
             : base(Options.Create(new DatabaseOptions { ConnectionString = "Host=ignored;Database=ignored" }))
         {
             _dbName = dbName;
+            _onSave = onSave;
         }
 
         public override BtcMapDbContext CreateContext(Action<NpgsqlDbContextOptionsBuilder> npgsqlOptionsAction = null)
         {
             var builder = new DbContextOptionsBuilder<BtcMapDbContext>();
             builder.UseInMemoryDatabase(_dbName);
-            return new BtcMapDbContext(builder.Options);
+            return _onSave == null
+                ? new BtcMapDbContext(builder.Options)
+                : new HookedDbContext(builder.Options, _onSave);
+        }
+    }
+
+    private sealed class HookedDbContext : BtcMapDbContext
+    {
+        private readonly Func<Task> _onSave;
+
+        public HookedDbContext(DbContextOptions<BtcMapDbContext> options, Func<Task> onSave)
+            : base(options)
+        {
+            _onSave = onSave;
+        }
+
+        public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            await _onSave();
+            return await base.SaveChangesAsync(cancellationToken);
         }
     }
 }

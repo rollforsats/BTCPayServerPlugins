@@ -193,8 +193,18 @@ public class BtcMapService : IBtcMapService
             // the OSM identifiers before re-throwing so a retry targets the existing
             // node instead of creating a duplicate. The controller's existing
             // catch(PluginBuilderApiException) block surfaces the error to the
-            // merchant — swallowing here would lose that signal.
-            await ctx.SaveChangesAsync();
+            // merchant — swallowing here would lose that signal. Guard the save
+            // so an EF failure can't replace the in-flight PluginBuilderApiException.
+            try
+            {
+                await ctx.SaveChangesAsync();
+            }
+            catch (Exception saveEx)
+            {
+                _logger.LogError(saveEx,
+                    "Failed to persist OSM identifiers after directory submission failure for store {StoreId}; a retry may create a duplicate OSM node.",
+                    storeId);
+            }
             throw;
         }
     }
