@@ -40,12 +40,6 @@ public class BtcMapService : IBtcMapService
         _logger = logger;
     }
 
-    private async Task<bool> StoreHasOsmToken(string storeId)
-    {
-        var oauth = await _oauthRepo.GetForStoreAsync(storeId);
-        return oauth != null && !string.IsNullOrEmpty(oauth.OsmAccessToken);
-    }
-
     private static BtcMapMerchant ToMerchant(BtcMapStoreSettings settings, bool acceptsLightning)
         => new()
         {
@@ -107,8 +101,11 @@ public class BtcMapService : IBtcMapService
     }
 
     /// <summary>
-    /// Submit a new listing via the plugin-builder API. Handles both tagging existing
-    /// elements and creating new nodes, depending on whether osmNodeId is provided.
+    /// Submit a new listing: write to OSM via the merchant's own OAuth credentials,
+    /// optionally submit a directory PR via the plugin-builder API. The OSM write
+    /// runs first because it's the irreversible side effect — if the directory leg
+    /// fails, the OSM identifiers are persisted before re-throwing so a retry
+    /// targets the existing node instead of creating a duplicate.
     /// </summary>
     public async Task<BtcMapListing> SubmitListing(string storeId, BtcMapStoreSettings settings,
         bool acceptsLightning, bool submitToDirectory,
@@ -123,28 +120,6 @@ public class BtcMapService : IBtcMapService
             throw new ArgumentOutOfRangeException(nameof(osmType), "Only 'node' is supported for new links.");
         if (osmId is <= 0)
             throw new ArgumentOutOfRangeException(nameof(osmId), "osmId must be positive when linking an existing element.");
-
-        var request = new BtcMapSubmitRequest
-        {
-            Name = settings.BusinessName,
-            Url = settings.Url,
-            Description = submitToDirectory ? settings.DirectoryDescription : null,
-            Type = submitToDirectory ? settings.DirectoryType : null,
-            SubType = submitToDirectory ? settings.DirectorySubType : null,
-            Country = settings.Country,
-            Twitter = submitToDirectory ? settings.DirectoryTwitter : null,
-            Github = submitToDirectory ? settings.DirectoryGithub : null,
-            OnionUrl = submitToDirectory ? settings.DirectoryOnionUrl : null,
-            OsmNodeId = osmId,
-            OsmNodeType = osmType,
-            Latitude = osmId == null ? settings.Latitude : null,
-            Longitude = osmId == null ? settings.Longitude : null,
-            OsmCategory = osmId == null ? settings.Category : null,
-            SubmitToDirectory = submitToDirectory,
-            TagOnOsm = true,
-            AcceptsLightning = acceptsLightning,
-            Address = BuildAddress(settings.HouseNumber, settings.Street, settings.City, settings.PostCode, settings.Country)
-        };
 
         var listing = new BtcMapListing
         {
@@ -175,69 +150,53 @@ public class BtcMapService : IBtcMapService
             DirectorySubType = submitToDirectory ? settings.DirectorySubType : null
         };
 
-        // Single context: stage the row in memory, call the API, apply API-derived
-        // fields, then commit once. If the API call throws, SaveChangesAsync never
-        // runs, so no orphan Pending row gets persisted.
         await using var ctx = _dbContextFactory.CreateContext();
         var existing = await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId);
         if (existing != null)
             ctx.Listings.Remove(existing);
         ctx.Listings.Add(listing);
 
-        if (await StoreHasOsmToken(storeId))
-        {
-            // Per-store OAuth path: tag OSM directly using the merchant's own
-            // credentials, then route any directory leg through plugin-builder
-            // with TagOnOsm=false so the bot doesn't double-tag.
-            await DispatchOsmSubmitAsync(storeId, settings, acceptsLightning, listing, osmType, osmId,
-                CancellationToken.None);
-
-            if (submitToDirectory)
-            {
-                request.TagOnOsm = false;
-                request.OsmNodeId = listing.OsmElementId;
-                request.OsmNodeType = listing.OsmElementType;
-                try
-                {
-                    var directoryResponse = await _apiClient.SubmitAsync(request);
-                    ApplyDirectoryResponse(listing, directoryResponse, settings.Url);
-                }
-                catch (Exception ex)
-                {
-                    // OSM is already live with the merchant's identity attached. Losing
-                    // the local row here would orphan that node and let a retry create
-                    // a duplicate. Save the listing with directory fields null; the
-                    // active-listing page surfaces a re-submit CTA for the directory leg.
-                    _logger.LogWarning(ex,
-                        "Directory submission failed after OSM commit for store {StoreId}; listing saved without directory state",
-                        storeId);
-                }
-            }
-        }
-        else
-        {
-            // Legacy plugin-builder bot path.
-            var response = await _apiClient.SubmitAsync(request);
-
-            // Upstream's only OSM-leg skip on a healthy server is `osm-access-token-not-configured` —
-            // an operator config error, not a merchant-facing outcome. Surface as an error so the
-            // merchant sees the truth and the operator gets paged; nothing persists locally.
-            if (response.Osm?.Skipped != null)
-                throw new PluginBuilderApiException(503,
-                    $"BTC Map service is unavailable (OSM leg skipped: {response.Osm.Skipped}). Please contact your administrator.");
-
-            if (response.Osm != null && response.Osm.NodeId.HasValue)
-            {
-                listing.OsmElementId = response.Osm.NodeId.Value;
-                listing.OsmElementType = response.Osm.NodeType ?? listing.OsmElementType;
-                listing.OsmElementVersion = response.Osm.NewVersion ?? 1;
-            }
-            ApplyDirectoryResponse(listing, response, settings.Url);
-        }
+        await DispatchOsmSubmitAsync(storeId, settings, acceptsLightning, listing, osmType, osmId,
+            CancellationToken.None);
 
         listing.Status = ListingStatus.Active;
-        await ctx.SaveChangesAsync();
-        return listing;
+
+        if (!submitToDirectory)
+        {
+            await ctx.SaveChangesAsync();
+            return listing;
+        }
+
+        var request = new BtcMapSubmitRequest
+        {
+            Name = settings.BusinessName,
+            Url = settings.Url,
+            Description = settings.DirectoryDescription,
+            Type = settings.DirectoryType,
+            SubType = settings.DirectorySubType,
+            Country = settings.Country,
+            Twitter = settings.DirectoryTwitter,
+            Github = settings.DirectoryGithub,
+            OnionUrl = settings.DirectoryOnionUrl
+        };
+
+        try
+        {
+            var directoryResponse = await _apiClient.SubmitAsync(request);
+            ApplyDirectoryResponse(listing, directoryResponse, settings.Url);
+            await ctx.SaveChangesAsync();
+            return listing;
+        }
+        catch (PluginBuilderApiException)
+        {
+            // OSM is already live with the merchant's identity attached. Persist
+            // the OSM identifiers before re-throwing so a retry targets the existing
+            // node instead of creating a duplicate. The controller's existing
+            // catch(PluginBuilderApiException) block surfaces the error to the
+            // merchant — swallowing here would lose that signal.
+            await ctx.SaveChangesAsync();
+            throw;
+        }
     }
 
     private void ApplyDirectoryResponse(BtcMapListing listing, BtcMapSubmitResponse response, string url)
@@ -301,56 +260,27 @@ public class BtcMapService : IBtcMapService
 
     public async Task UpdateListing(BtcMapListing listing, BtcMapStoreSettings settings, bool acceptsLightning)
     {
-        int? newVersion = null;
-        string resolvedName = null;
-
-        if (await StoreHasOsmToken(listing.StoreId))
+        var merchant = ToMerchant(listing, settings, acceptsLightning);
+        int newVersion;
+        string resolvedName;
+        try
         {
-            var merchant = ToMerchant(listing, settings, acceptsLightning);
-            try
-            {
-                var result = await _osmApiClient.UpdateNodeAsync(
-                    listing.StoreId, listing.OsmElementId, listing.OsmElementType, merchant, CancellationToken.None);
-                newVersion = result.NewVersion;
-                resolvedName = result.ResolvedName;
-            }
-            catch (OsmAuthException)
-            {
-                await _oauthRepo.ClearTokenOnlyAsync(listing.StoreId);
-                throw;
-            }
+            var result = await _osmApiClient.UpdateNodeAsync(
+                listing.StoreId, listing.OsmElementId, listing.OsmElementType, merchant, CancellationToken.None);
+            newVersion = result.NewVersion;
+            resolvedName = result.ResolvedName;
         }
-        else
+        catch (OsmAuthException)
         {
-            var request = new BtcMapSubmitRequest
-            {
-                Name = settings.BusinessName,
-                Url = settings.Url,
-                // Reverify-only path: OSM tags don't carry description, so the stored value
-                // is sent purely to satisfy the request shape. Form edits to DirectoryDescription
-                // flow through SubmitListing's directory leg, not here.
-                Description = listing.Description,
-                OsmNodeId = listing.OsmElementId,
-                OsmNodeType = listing.OsmElementType,
-                TagOnOsm = true,
-                SubmitToDirectory = false,
-                AcceptsLightning = acceptsLightning,
-                Address = BuildAddress(settings.HouseNumber, settings.Street, settings.City, settings.PostCode, settings.Country)
-            };
-
-            var response = await _apiClient.SubmitAsync(request);
-            if (response.Osm?.Skipped != null)
-                _logger.LogWarning("OSM leg skipped during update: {Reason}", response.Osm.Skipped);
-            else
-                newVersion = response.Osm?.NewVersion;
+            await _oauthRepo.ClearTokenOnlyAsync(listing.StoreId);
+            throw;
         }
 
         await using var ctx = _dbContextFactory.CreateContext();
         var dbListing = await ctx.Listings.FirstAsync(l => l.Id == listing.Id);
-        if (newVersion.HasValue)
-            dbListing.OsmElementVersion = newVersion.Value;
-        // OAuth path: OSM is source-of-truth (preserves curator name). Legacy bot
-        // path: no resolved name returned, so fall back to form value.
+        dbListing.OsmElementVersion = newVersion;
+        // OSM is source-of-truth for the display name post-merge: preserves a curator's
+        // existing name on the node, falls back to merchant-supplied name otherwise.
         dbListing.BusinessName = !string.IsNullOrWhiteSpace(resolvedName)
             ? resolvedName
             : settings.BusinessName;
@@ -373,31 +303,15 @@ public class BtcMapService : IBtcMapService
         if (listing == null || listing.Status == ListingStatus.Unlisted)
             return;
 
-        if (await StoreHasOsmToken(storeId))
+        try
         {
-            try
-            {
-                await _osmApiClient.UnlistNodeAsync(storeId, listing.OsmElementId, listing.OsmElementType,
-                    listing.BusinessName, CancellationToken.None);
-            }
-            catch (OsmAuthException)
-            {
-                await _oauthRepo.ClearTokenOnlyAsync(storeId);
-                throw;
-            }
+            await _osmApiClient.UnlistNodeAsync(storeId, listing.OsmElementId, listing.OsmElementType,
+                listing.BusinessName, CancellationToken.None);
         }
-        else
+        catch (OsmAuthException)
         {
-            var request = new BtcMapSubmitRequest
-            {
-                Name = listing.BusinessName,
-                Url = listing.Url,
-                Description = listing.Description,
-                OsmNodeId = listing.OsmElementId,
-                OsmNodeType = listing.OsmElementType,
-                UnlistFromOsm = true
-            };
-            await _apiClient.SubmitAsync(request);
+            await _oauthRepo.ClearTokenOnlyAsync(storeId);
+            throw;
         }
 
         await using var ctx = _dbContextFactory.CreateContext();
@@ -418,62 +332,36 @@ public class BtcMapService : IBtcMapService
 
     public async Task ReverifyListing(BtcMapListing listing, bool acceptsLightning)
     {
-        int? newVersion = null;
-
-        if (await StoreHasOsmToken(listing.StoreId))
+        var merchant = new BtcMapMerchant
         {
-            var merchant = new BtcMapMerchant
-            {
-                Name = listing.BusinessName,
-                OsmCategory = listing.Category,
-                Url = listing.Url,
-                AcceptsLightning = acceptsLightning,
-                Latitude = listing.Latitude,
-                Longitude = listing.Longitude,
-                HouseNumber = listing.HouseNumber,
-                Street = listing.Street,
-                City = listing.City,
-                PostCode = listing.PostCode,
-                Country = listing.Country,
-                Phone = listing.Phone
-            };
-            try
-            {
-                newVersion = await _osmApiClient.ReverifyNodeAsync(
-                    listing.StoreId, listing.OsmElementId, listing.OsmElementType, merchant, CancellationToken.None);
-            }
-            catch (OsmAuthException)
-            {
-                await _oauthRepo.ClearTokenOnlyAsync(listing.StoreId);
-                throw;
-            }
+            Name = listing.BusinessName,
+            OsmCategory = listing.Category,
+            Url = listing.Url,
+            AcceptsLightning = acceptsLightning,
+            Latitude = listing.Latitude,
+            Longitude = listing.Longitude,
+            HouseNumber = listing.HouseNumber,
+            Street = listing.Street,
+            City = listing.City,
+            PostCode = listing.PostCode,
+            Country = listing.Country,
+            Phone = listing.Phone
+        };
+        int newVersion;
+        try
+        {
+            newVersion = await _osmApiClient.ReverifyNodeAsync(
+                listing.StoreId, listing.OsmElementId, listing.OsmElementType, merchant, CancellationToken.None);
         }
-        else
+        catch (OsmAuthException)
         {
-            var request = new BtcMapSubmitRequest
-            {
-                Name = listing.BusinessName,
-                Url = listing.Url,
-                Description = listing.Description,
-                OsmNodeId = listing.OsmElementId,
-                OsmNodeType = listing.OsmElementType,
-                TagOnOsm = true,
-                SubmitToDirectory = false,
-                AcceptsLightning = acceptsLightning,
-                Address = BuildAddress(listing.HouseNumber, listing.Street, listing.City, listing.PostCode, listing.Country)
-            };
-
-            var response = await _apiClient.SubmitAsync(request);
-            if (response.Osm?.Skipped != null)
-                _logger.LogWarning("OSM leg skipped during reverify: {Reason}", response.Osm.Skipped);
-            else
-                newVersion = response.Osm?.NewVersion;
+            await _oauthRepo.ClearTokenOnlyAsync(listing.StoreId);
+            throw;
         }
 
         await using var ctx = _dbContextFactory.CreateContext();
         var dbListing = await ctx.Listings.FirstAsync(l => l.Id == listing.Id);
-        if (newVersion.HasValue)
-            dbListing.OsmElementVersion = newVersion.Value;
+        dbListing.OsmElementVersion = newVersion;
         dbListing.LastVerifiedAt = DateTimeOffset.UtcNow;
         await ctx.SaveChangesAsync();
     }
@@ -491,8 +379,7 @@ public class BtcMapService : IBtcMapService
             Country = country,
             Twitter = settings.DirectoryTwitter,
             Github = settings.DirectoryGithub,
-            OnionUrl = settings.DirectoryOnionUrl,
-            SubmitToDirectory = true
+            OnionUrl = settings.DirectoryOnionUrl
         };
 
         var response = await _apiClient.SubmitAsync(request);
@@ -530,21 +417,5 @@ public class BtcMapService : IBtcMapService
         }
 
         return response;
-    }
-
-    private static BtcMapSubmitAddress BuildAddress(string houseNumber, string street, string city, string postcode, string country)
-    {
-        if (string.IsNullOrWhiteSpace(houseNumber) && string.IsNullOrWhiteSpace(street) &&
-            string.IsNullOrWhiteSpace(city) && string.IsNullOrWhiteSpace(postcode) &&
-            string.IsNullOrWhiteSpace(country))
-            return null;
-        return new BtcMapSubmitAddress
-        {
-            HouseNumber = houseNumber,
-            Street = street,
-            City = city,
-            Postcode = postcode,
-            Country = country
-        };
     }
 }

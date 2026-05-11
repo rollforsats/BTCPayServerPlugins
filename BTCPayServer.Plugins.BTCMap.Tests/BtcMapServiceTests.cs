@@ -39,11 +39,14 @@ public class BtcMapServiceTests
     }
 
     [Fact]
-    public async Task SubmitListing_NewNode_OsmSucceeds_DirectoryThrows_PersistsListingWithoutDirectoryState()
+    public async Task SubmitListing_NewNode_OsmSucceeds_DirectoryThrows_PersistsListingAndRethrows()
     {
-        // Pins the PR-#5-outside-review blocker: when OSM has committed (node live on
-        // OSM) and the directory leg throws, the local row MUST persist so a retry
-        // doesn't create a duplicate OSM node at the same coordinates.
+        // Two contracts at once:
+        //   1. OSM identifiers MUST persist before re-throw — a retry must target the
+        //      existing node, not create a duplicate at the same coordinates.
+        //   2. PluginBuilderApiException MUST propagate so the controller's existing
+        //      catch block renders the error to the merchant. Swallowing here was
+        //      the 2026-05-11 silent-failure bug.
         const string storeId = "store-blocker-create";
         var factory = TestDbFactory.Create();
         var osm = new StubOsmApiClient
@@ -59,28 +62,25 @@ public class BtcMapServiceTests
             api, new StubOverpassApiClient(), osm, oauthRepo, new NullLogger<BtcMapService>());
 
         var settings = NewSettingsWithDirectory();
-        var listing = await service.SubmitListing(storeId, settings,
-            acceptsLightning: true, submitToDirectory: true, osmType: null, osmId: null);
+        var ex = await Assert.ThrowsAsync<PluginBuilderApiException>(
+            () => service.SubmitListing(storeId, settings,
+                acceptsLightning: true, submitToDirectory: true, osmType: null, osmId: null));
+        Assert.Equal(502, ex.StatusCode);
 
-        Assert.Equal(9001, listing.OsmElementId);
-        Assert.Equal("node", listing.OsmElementType);
-        Assert.Equal(ListingStatus.Active, listing.Status);
-        Assert.Null(listing.DirectorySubmittedAt);
-        Assert.Null(listing.DirectoryPrUrl);
-
-        // Row really committed to the in-memory DB, not just mutated in memory.
         await using var verify = factory.CreateContext();
         var persisted = await verify.Listings.SingleAsync(l => l.StoreId == storeId);
         Assert.Equal(9001, persisted.OsmElementId);
+        Assert.Equal("node", persisted.OsmElementType);
         Assert.Equal(ListingStatus.Active, persisted.Status);
+        Assert.Null(persisted.DirectorySubmittedAt);
         Assert.Null(persisted.DirectoryPrUrl);
     }
 
     [Fact]
-    public async Task SubmitListing_LinkExisting_OsmSucceeds_DirectoryThrows_PersistsListing()
+    public async Task SubmitListing_LinkExisting_OsmSucceeds_DirectoryThrows_PersistsListingAndRethrows()
     {
         // Sibling for the link-existing arm of DispatchOsmSubmitAsync. Same contract:
-        // once OSM has been updated, the directory failure must not lose the row.
+        // OSM identifiers persisted before re-throw, and the exception propagates.
         const string storeId = "store-blocker-link";
         var factory = TestDbFactory.Create();
         var osm = new StubOsmApiClient
@@ -93,26 +93,25 @@ public class BtcMapServiceTests
         };
         var api = new StubPluginBuilderApiClient
         {
-            OnSubmit = _ => throw new InvalidOperationException("directory blew up")
+            OnSubmit = _ => throw new PluginBuilderApiException(502, "directory upstream 502")
         };
         var oauthRepo = new ConnectedOAuthRepo(storeId);
         var service = new BtcMapService(factory, new StubListingRepository(),
             api, new StubOverpassApiClient(), osm, oauthRepo, new NullLogger<BtcMapService>());
 
         var settings = NewSettingsWithDirectory();
-        var listing = await service.SubmitListing(storeId, settings,
-            acceptsLightning: false, submitToDirectory: true, osmType: "node", osmId: 5000);
-
-        Assert.Equal(5000, listing.OsmElementId);
-        Assert.Equal("node", listing.OsmElementType);
-        Assert.Equal(7, listing.OsmElementVersion);
-        Assert.Equal(ListingStatus.Active, listing.Status);
-        Assert.Null(listing.DirectoryPrUrl);
+        await Assert.ThrowsAsync<PluginBuilderApiException>(
+            () => service.SubmitListing(storeId, settings,
+                acceptsLightning: false, submitToDirectory: true, osmType: "node", osmId: 5000));
 
         await using var verify = factory.CreateContext();
         var persisted = await verify.Listings.SingleAsync(l => l.StoreId == storeId);
         Assert.Equal(5000, persisted.OsmElementId);
+        Assert.Equal("node", persisted.OsmElementType);
+        Assert.Equal(7, persisted.OsmElementVersion);
+        Assert.Equal(ListingStatus.Active, persisted.Status);
         Assert.Null(persisted.DirectorySubmittedAt);
+        Assert.Null(persisted.DirectoryPrUrl);
     }
 
     private static BtcMapStoreSettings NewSettingsWithDirectory() => new()
