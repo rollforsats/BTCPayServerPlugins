@@ -508,8 +508,18 @@ public class UIBtcMapStoreController : Controller
         if (oauth != null && !string.IsNullOrWhiteSpace(oauth.OsmAccessToken)
             && !string.IsNullOrWhiteSpace(oauth.OsmClientId) && !string.IsNullOrWhiteSpace(oauth.OsmClientSecret))
         {
-            await _osmAuthService.RevokeAsync(oauth.OsmClientId, oauth.OsmClientSecret, oauth.OsmAccessToken,
-                HttpContext.RequestAborted);
+            try
+            {
+                await _osmAuthService.RevokeAsync(oauth.OsmClientId, oauth.OsmClientSecret, oauth.OsmAccessToken,
+                    HttpContext.RequestAborted);
+            }
+            catch (Exception ex)
+            {
+                // Defense-in-depth: IOsmAuthService.RevokeAsync is documented as best-effort
+                // and OsmAuthService swallows internally, but a future implementation could
+                // forget. Disconnect must complete locally regardless of the OSM round-trip.
+                _logger.LogWarning(ex, "OSM revoke threw at the controller boundary; continuing with local Disconnect");
+            }
         }
         await _oauthRepo.ClearOAuthAsync(storeId);
         TempData["StatusMessage"] = "Disconnected from OpenStreetMap.";
@@ -517,27 +527,44 @@ public class UIBtcMapStoreController : Controller
     }
 
     private string BuildOsmCallbackUri(string storeId)
+        => BuildOsmCallbackUri(Request.Scheme, Request.Host.ToUriComponent(), Request.PathBase.ToString(), storeId);
+
+    // Internal so the test project can pin the byte-for-byte redirect_uri value
+    // across PathBase variants (empty, "/", subpath, subpath-with-slash) without
+    // standing up a full ControllerContext. OSM validates redirect_uri exactly,
+    // so any drift between this and the URI the merchant pasted into OSM's app
+    // form produces a redirect_uri_mismatch with no useful diagnostic.
+    internal static string BuildOsmCallbackUri(string scheme, string host, string pathBase, string storeId)
     {
-        var root = Request.Scheme + "://" + Request.Host.ToUriComponent() + Request.PathBase;
+        var root = scheme + "://" + host + pathBase;
         return $"{root.TrimEnd('/')}/plugins/btcmap/stores/{storeId}/oauth/callback";
     }
 
     private async Task PopulateOsmStateAsync(BtcMapListingViewModel vm, string storeId)
     {
         var oauth = await _oauthRepo.GetForStoreAsync(storeId);
+        ApplyOsmStateToViewModel(vm, oauth,
+            tempPendingState: TempData["OsmConnectionState"]?.ToString(),
+            tempErrorKind: TempData["OsmErrorKind"]?.ToString(),
+            tempErrorMessage: TempData["OsmErrorMessage"]?.ToString());
+    }
 
-        // Surface error/state hints handed off from the OAuth callback via TempData.
-        var pendingExpiredFlag = TempData["OsmConnectionState"]?.ToString();
-        var errorKindFlag = TempData["OsmErrorKind"]?.ToString();
-        var errorMessage = TempData["OsmErrorMessage"]?.ToString();
-
-        if (!string.IsNullOrEmpty(errorKindFlag) && Enum.TryParse<OsmConnectionErrorKind>(errorKindFlag, out var kind))
+    // Internal so the unit-test project can drive the OSM-state computation without
+    // standing up a full ControllerContext + TempData provider + HttpContext.
+    internal static void ApplyOsmStateToViewModel(
+        BtcMapListingViewModel vm,
+        BtcMapStoreOAuthDecrypted oauth,
+        string tempPendingState,
+        string tempErrorKind,
+        string tempErrorMessage)
+    {
+        if (!string.IsNullOrEmpty(tempErrorKind) && Enum.TryParse<OsmConnectionErrorKind>(tempErrorKind, out var kind))
         {
             vm.OsmErrorKind = kind;
-            vm.OsmErrorMessage = errorMessage;
+            vm.OsmErrorMessage = tempErrorMessage;
             vm.OsmState = OsmConnectionState.ConnectionError;
         }
-        else if (string.Equals(pendingExpiredFlag, nameof(OsmConnectionState.PendingExpired), StringComparison.Ordinal))
+        else if (string.Equals(tempPendingState, nameof(OsmConnectionState.PendingExpired), StringComparison.Ordinal))
         {
             vm.OsmState = OsmConnectionState.PendingExpired;
         }
@@ -555,6 +582,7 @@ public class UIBtcMapStoreController : Controller
         // they need to re-paste credentials.
         if (oauth.CredentialsReset && vm.OsmErrorKind == OsmConnectionErrorKind.None)
         {
+            vm.OsmState = OsmConnectionState.ConnectionError;
             vm.OsmErrorKind = OsmConnectionErrorKind.Other;
             vm.OsmErrorMessage = "OSM credentials were reset because the encryption key changed. Please re-paste your client_id and client_secret to reconnect.";
         }

@@ -16,15 +16,14 @@ public class OsmCredentialsViewModel
     public string OsmClientSecret { get; set; }
 }
 
-/// <summary>One of the six UI states for the OSM Connect section.</summary>
+/// <summary>One of the UI states for the OSM Connect section.</summary>
 public enum OsmConnectionState
 {
     NotConfigured,
     ConfiguredNotConnected,
     Connected,
     PendingExpired,
-    ConnectionError,
-    TokenRevoked
+    ConnectionError
 }
 
 /// <summary>Discriminator for the State 5 connection-error variants.</summary>

@@ -197,8 +197,21 @@ public class BtcMapService : IBtcMapService
                 request.TagOnOsm = false;
                 request.OsmNodeId = listing.OsmElementId;
                 request.OsmNodeType = listing.OsmElementType;
-                var directoryResponse = await _apiClient.SubmitAsync(request);
-                ApplyDirectoryResponse(listing, directoryResponse, settings.Url);
+                try
+                {
+                    var directoryResponse = await _apiClient.SubmitAsync(request);
+                    ApplyDirectoryResponse(listing, directoryResponse, settings.Url);
+                }
+                catch (Exception ex)
+                {
+                    // OSM is already live with the merchant's identity attached. Losing
+                    // the local row here would orphan that node and let a retry create
+                    // a duplicate. Save the listing with directory fields null; the
+                    // active-listing page surfaces a re-submit CTA for the directory leg.
+                    _logger.LogWarning(ex,
+                        "Directory submission failed after OSM commit for store {StoreId}; listing saved without directory state",
+                        storeId);
+                }
             }
         }
         else
