@@ -1,3 +1,4 @@
+@using System.Text.Json
 @using BTCPayServer.Abstractions.Extensions
 @using BTCPayServer.Abstractions.Models
 @using BTCPayServer.Plugins.BTCMap.Data
@@ -299,8 +300,11 @@
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label asp-for="Settings.Phone" class="form-label">Phone (optional)</label>
-                            <input asp-for="Settings.Phone" class="form-control" placeholder="+44 20 8452 7891" />
-                            <div class="form-text">International format, starting with <code>+</code> and the country code.</div>
+                            <div class="input-group">
+                                <input type="text" id="Settings_PhoneDialCodeDisplay" class="form-control"
+                                       style="max-width: 5rem;" disabled aria-label="Dial code" />
+                                <input asp-for="Settings.Phone" class="form-control" placeholder="555-123-4567" />
+                            </div>
                             <span asp-validation-for="Settings.Phone" class="text-danger"></span>
                         </div>
                     </div>
@@ -378,6 +382,9 @@
     </div>
 </div>
 
+<script>
+    window.btcMapDialCodes = @Html.Raw(JsonSerializer.Serialize(IsoDialCodes.ByIso2));
+</script>
 <script>
     // Geocode button
     document.getElementById('geocodeBtn')?.addEventListener('click', async function() {
@@ -468,4 +475,56 @@
         if (group) group.style.display = this.value === 'merchants' ? '' : 'none';
         syncActiveSubTypeRequired();
     });
+
+    // Phone auto-prepend + light normalization on submit.
+    // Per OSM Key:phone wiki: canonical format is `+<CC> <area> <local>`
+    // (ITU-T E.123 / DIN 5008). RFC 3966 hyphen form is also accepted.
+    // "Phone numbers should not have parentheses around any of these
+    // number elements, including the area code."
+    // Normalize: strip parens, collapse whitespace runs, then either
+    // pass through (if input starts with '+') or prepend the dial code
+    // derived from the selected address Country.
+    (function() {
+        const phoneEl = document.getElementById('Settings_Phone');
+        if (!phoneEl) return;
+        const form = phoneEl.closest('form');
+        // Scope country lookup to phone's form: the page renders two
+        // Settings.Country selects in mutually exclusive Razor branches
+        // today, but the duplicate ID would silently mis-target if that
+        // ever changed.
+        const countryEl = form?.querySelector('#Settings_Country');
+        form?.addEventListener('submit', function() {
+            let raw = (phoneEl.value ?? '').trim();
+            if (raw === '') return;
+            raw = raw.replace(/[()]/g, '').replace(/\s+/g, ' ').trim();
+            if (raw.startsWith('+')) {
+                phoneEl.value = raw;
+                return;
+            }
+            const iso2 = countryEl?.value ?? '';
+            if (!iso2) {
+                phoneEl.value = raw;
+                return;
+            }
+            const dialCode = window.btcMapDialCodes?.[iso2];
+            phoneEl.value = dialCode ? dialCode + ' ' + raw : raw;
+        });
+    })();
+
+    // Phone dial-code display: mirror the dial code for the selected
+    // address Country into the disabled prefix field beside the phone
+    // input. Purely visual — the dial code is composed into
+    // Settings.Phone by the submit handler above, not via this field.
+    (function() {
+        const displayEl = document.getElementById('Settings_PhoneDialCodeDisplay');
+        if (!displayEl) return;
+        const countryEl = displayEl.closest('form')?.querySelector('#Settings_Country');
+        if (!countryEl) return;
+        function syncDialCodeDisplay() {
+            const iso2 = countryEl.value ?? '';
+            displayEl.value = window.btcMapDialCodes?.[iso2] ?? '';
+        }
+        countryEl.addEventListener('change', syncDialCodeDisplay);
+        syncDialCodeDisplay();
+    })();
 </script>
