@@ -12,6 +12,18 @@
     var osmBaseUrl = Model.IsMainnet
         ? "https://www.openstreetmap.org"
         : "https://master.apis.dev.openstreetmap.org";
+
+    // The submit handler prepends the country dial code to Settings.Phone, so
+    // the persisted value is e.g. "+1 5551234567". When we re-render the form
+    // (after unlist, or editing an existing listing) the disabled prefix field
+    // already shows "+1", so the editable input should show only the local
+    // part — strip a leading dial code that matches the selected country.
+    var phoneLocal = Model.Settings?.Phone ?? string.Empty;
+    var phoneDialCode = IsoDialCodes.ForCountry(Model.Settings?.Country);
+    if (!string.IsNullOrEmpty(phoneDialCode) && phoneLocal.StartsWith(phoneDialCode, StringComparison.Ordinal))
+    {
+        phoneLocal = phoneLocal.Substring(phoneDialCode.Length).TrimStart();
+    }
 }
 
 <div class="row">
@@ -303,7 +315,7 @@
                             <div class="input-group">
                                 <input type="text" id="Settings_PhoneDialCodeDisplay" class="form-control"
                                        style="max-width: 5rem;" disabled aria-label="Dial code" />
-                                <input asp-for="Settings.Phone" class="form-control" placeholder="555-123-4567" />
+                                <input asp-for="Settings.Phone" value="@phoneLocal" class="form-control" placeholder="555-123-4567" />
                             </div>
                             <span asp-validation-for="Settings.Phone" class="text-danger"></span>
                         </div>
