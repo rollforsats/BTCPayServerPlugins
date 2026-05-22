@@ -501,7 +501,7 @@
                 phoneEl.value = raw;
                 return;
             }
-            const iso2 = countryEl?.value ?? '';
+            const iso2 = (countryEl?.value ?? '').trim().toUpperCase();
             if (!iso2) {
                 phoneEl.value = raw;
                 return;
@@ -521,7 +521,7 @@
         const countryEl = displayEl.closest('form')?.querySelector('#Settings_Country');
         if (!countryEl) return;
         function syncDialCodeDisplay() {
-            const iso2 = countryEl.value ?? '';
+            const iso2 = (countryEl.value ?? '').trim().toUpperCase();
             displayEl.value = window.btcMapDialCodes?.[iso2] ?? '';
         }
         countryEl.addEventListener('change', syncDialCodeDisplay);
