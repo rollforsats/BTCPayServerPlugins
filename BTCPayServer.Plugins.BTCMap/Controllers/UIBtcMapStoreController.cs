@@ -80,6 +80,15 @@ public class UIBtcMapStoreController : Controller
         model.DirectoryOnionUrl = NormalizeUrl(model.DirectoryOnionUrl, "http");
     }
 
+    // Defense-in-depth for the country-code dropdown: when JS is disabled or
+    // a POST bypasses the form UI, ensure any non-empty phone starts with `+`
+    // so we don't write malformed values to OSM. Empty phone short-circuits.
+    internal static bool PhoneIsWellFormed(string phone)
+        => string.IsNullOrWhiteSpace(phone) || phone.TrimStart().StartsWith("+");
+
+    private const string PhoneFormatErrorMessage =
+        "Error: Phone must start with a country code (e.g. +44 20 8452 7891), or set the address Country so we can add it automatically.";
+
     private static string BuildSubmissionStatusMessage(BtcMapListing listing, bool submitToDirectory, bool isLink)
     {
         if (submitToDirectory && listing.DirectorySubmittedAt.HasValue)
@@ -245,6 +254,13 @@ public class UIBtcMapStoreController : Controller
             return RedirectToAction(nameof(Index), new { storeId });
         }
 
+        if (!PhoneIsWellFormed(model.Phone))
+        {
+            var vm = await BuildViewModel(storeId, model);
+            vm.StatusMessage = PhoneFormatErrorMessage;
+            return View("Index", vm);
+        }
+
         // Picker is node-only since the cutover to node-only Overpass searches.
         // Existing way-typed listings still work for update/reverify/unlist via the
         // writer (which remains permissive), but new links from the picker only
@@ -290,6 +306,13 @@ public class UIBtcMapStoreController : Controller
             return RedirectToAction(nameof(Index), new { storeId });
         }
 
+        if (!PhoneIsWellFormed(model.Phone))
+        {
+            var vm = await BuildViewModel(storeId, model);
+            vm.StatusMessage = PhoneFormatErrorMessage;
+            return View("Index", vm);
+        }
+
         NormalizeUrls(model);
 
         try
@@ -322,6 +345,13 @@ public class UIBtcMapStoreController : Controller
         {
             TempData["StatusMessage"] = "Error: Invalid settings.";
             return RedirectToAction(nameof(Index), new { storeId });
+        }
+
+        if (!PhoneIsWellFormed(model.Phone))
+        {
+            var vm = await BuildViewModel(storeId, model);
+            vm.StatusMessage = PhoneFormatErrorMessage;
+            return View("Index", vm);
         }
 
         var listing = await _btcMapService.GetListingForStore(storeId);
