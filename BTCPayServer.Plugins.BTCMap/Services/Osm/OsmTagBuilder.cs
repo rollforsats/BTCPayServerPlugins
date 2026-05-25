@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 
 namespace BTCPayServer.Plugins.BTCMap.Services.Osm;
 
@@ -16,6 +17,12 @@ public class OsmTagBuilder : IOsmTagBuilder
     public const string PaymentLightningKey = "payment:lightning";
     public const string PaymentBitcoinKey = "payment:bitcoin";
     public const string PhoneKey = "phone";
+
+    // Top-level OSM keys that classify a feature. If an existing element already
+    // carries any of these, we don't add another category tag — the merchant's
+    // choice would either duplicate or conflict with the curator's classification.
+    private static readonly string[] CategoryKeys =
+        { "amenity", "shop", "tourism", "office", "craft", "leisure", "healthcare" };
 
     private readonly Func<DateTime> _utcNow;
 
@@ -41,11 +48,15 @@ public class OsmTagBuilder : IOsmTagBuilder
         if (!existingHasName && !string.IsNullOrWhiteSpace(merchant.Name))
             merge.SetTags["name"] = merchant.Name.Trim();
 
-        // amenity: write on create (no existing tags) or only if the existing element
-        // doesn't already carry one. Don't overwrite a curator's choice.
-        var amenity = string.IsNullOrWhiteSpace(merchant.OsmCategory) ? "shop" : merchant.OsmCategory.Trim();
-        if (existingTags == null || !existingTags.ContainsKey("amenity"))
-            merge.SetTags["amenity"] = amenity;
+        // Category: stored as "key=value" (e.g. "shop=clothes", "tourism=hotel").
+        // Legacy values without "=" are treated as bare amenity= values.
+        // On link, skip writing if the existing element already carries any
+        // recognized category key — don't overwrite a curator's classification.
+        var (catKey, catValue) = SplitCategory(merchant.OsmCategory);
+        var existingHasCategory = existingTags != null
+            && CategoryKeys.Any(k => existingTags.ContainsKey(k));
+        if (!existingHasCategory)
+            merge.SetTags[catKey] = catValue;
 
         if (!string.IsNullOrWhiteSpace(merchant.Url))
             merge.SetTags["website"] = merchant.Url.Trim();
@@ -84,5 +95,24 @@ public class OsmTagBuilder : IOsmTagBuilder
     {
         if (string.IsNullOrWhiteSpace(value)) return;
         merge.SetTags[key] = value.Trim();
+    }
+
+    private static (string Key, string Value) SplitCategory(string category)
+    {
+        if (string.IsNullOrWhiteSpace(category))
+            return ("shop", "yes");
+        var trimmed = category.Trim();
+        var eq = trimmed.IndexOf('=');
+        if (eq < 0)
+            return ("amenity", trimmed);
+        if (eq == 0 || eq == trimmed.Length - 1)
+            return ("shop", "yes");
+        // Whitelist the parsed key — Category is POST-bound and a tampered
+        // request could otherwise inject arbitrary OSM tags (e.g. "name=…").
+        var key = trimmed.Substring(0, eq).Trim().ToLowerInvariant();
+        var value = trimmed.Substring(eq + 1).Trim();
+        if (value.Length == 0 || !CategoryKeys.Contains(key, StringComparer.Ordinal))
+            return ("shop", "yes");
+        return (key, value);
     }
 }

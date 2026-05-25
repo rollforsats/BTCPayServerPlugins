@@ -14,7 +14,7 @@
     string latStr = Model.Settings.Latitude?.ToString(inv) ?? "";
     string lonStr = Model.Settings.Longitude?.ToString(inv) ?? "";
 
-    string[] categoryKeys = { "amenity", "shop", "tourism", "office", "craft" };
+    string[] categoryKeys = { "amenity", "shop", "tourism", "office", "craft", "leisure", "healthcare" };
     string[] addressOrder = { "addr:city", "addr:postcode", "addr:country" };
     string[] bitcoinTagKeys = { "currency:XBT", "payment:bitcoin", "payment:onchain", "payment:lightning" };
 
@@ -135,7 +135,14 @@
                                 tags.TryGetValue("addr:city", out var elCity);
                                 tags.TryGetValue("addr:postcode", out var elPostCode);
                                 tags.TryGetValue("addr:country", out var elCountry);
-                                var elCategory = category.HasValue ? category.Value.Value : Model.Settings.Category;
+                                // Store category as "key=value" (e.g. "shop=clothes") so
+                                // OsmTagBuilder routes it to the correct OSM top-level key.
+                                // If the existing OSM element already has a category, prefer
+                                // that — it's the curator's choice. category.Key is title-cased
+                                // for display, so lower-case it for the tag.
+                                var elCategory = category.HasValue
+                                    ? $"{category.Value.Key.ToLowerInvariant()}={category.Value.Value}"
+                                    : Model.Settings.Category;
                             }
                             <form method="post" asp-action="LinkExisting" asp-route-storeId="@storeId" class="flex-shrink-0">
                                 @Html.AntiForgeryToken()
