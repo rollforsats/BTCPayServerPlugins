@@ -227,30 +227,127 @@
                         <select asp-for="Settings.Category" class="form-select" required>
                             <option value="">Select a category...</option>
                             <optgroup label="Food &amp; Drink">
-                                <option value="cafe">Cafe</option>
-                                <option value="restaurant">Restaurant</option>
-                                <option value="bar">Bar</option>
-                                <option value="pub">Pub</option>
-                                <option value="fast_food">Fast Food</option>
+                                <option value="amenity=cafe">Cafe</option>
+                                <option value="amenity=restaurant">Restaurant</option>
+                                <option value="amenity=fast_food">Fast Food</option>
+                                <option value="amenity=bar">Bar</option>
+                                <option value="amenity=pub">Pub</option>
+                                <option value="amenity=ice_cream">Ice Cream Shop</option>
+                                <option value="amenity=food_court">Food Court</option>
+                                <option value="shop=bakery">Bakery</option>
+                                <option value="shop=pastry">Pastry / Patisserie</option>
+                                <option value="shop=confectionery">Confectionery / Sweets</option>
+                                <option value="shop=coffee">Coffee Shop (Retail)</option>
+                                <option value="shop=alcohol">Liquor Store</option>
+                                <option value="shop=wine">Wine Shop</option>
                             </optgroup>
-                            <optgroup label="Shopping">
-                                <option value="supermarket">Supermarket</option>
-                                <option value="convenience">Convenience Store</option>
-                                <option value="clothes">Clothing Store</option>
-                                <option value="electronics">Electronics Store</option>
-                                <option value="jewelry">Jewelry Store</option>
-                                <option value="books">Bookstore</option>
-                                <option value="gift">Gift Shop</option>
-                                <option value="general">General Store</option>
+                            <optgroup label="Groceries &amp; Food Retail">
+                                <option value="shop=supermarket">Supermarket</option>
+                                <option value="shop=convenience">Convenience Store</option>
+                                <option value="shop=greengrocer">Greengrocer / Produce</option>
+                                <option value="shop=butcher">Butcher</option>
+                                <option value="shop=deli">Delicatessen</option>
+                                <option value="shop=farm">Farm Shop</option>
+                                <option value="shop=health_food">Health Food</option>
                             </optgroup>
-                            <optgroup label="Services">
-                                <option value="hotel">Hotel / Accommodation</option>
-                                <option value="coworking">Coworking Space</option>
-                                <option value="atm">Bitcoin ATM</option>
+                            <optgroup label="Retail">
+                                <option value="shop=clothes">Clothing</option>
+                                <option value="shop=shoes">Shoes</option>
+                                <option value="shop=jewelry">Jewelry</option>
+                                <option value="shop=electronics">Electronics</option>
+                                <option value="shop=mobile_phone">Mobile Phone</option>
+                                <option value="shop=computer">Computer</option>
+                                <option value="shop=books">Bookstore</option>
+                                <option value="shop=gift">Gift Shop</option>
+                                <option value="shop=florist">Florist</option>
+                                <option value="shop=furniture">Furniture</option>
+                                <option value="shop=hardware">Hardware</option>
+                                <option value="shop=bicycle">Bicycle</option>
+                                <option value="shop=sports">Sporting Goods</option>
+                                <option value="shop=art">Art Shop / Gallery</option>
+                                <option value="shop=music">Music / Records</option>
+                                <option value="shop=toys">Toys</option>
+                                <option value="shop=pet">Pet Shop</option>
+                                <option value="shop=tobacco">Tobacco</option>
+                                <option value="shop=cannabis">Cannabis</option>
+                                <option value="shop=mall">Mall</option>
+                                <option value="shop=department_store">Department Store</option>
+                                <option value="shop=general">General Store</option>
+                                <option value="shop=yes">Other Shop</option>
+                            </optgroup>
+                            <optgroup label="Lodging">
+                                <option value="tourism=hotel">Hotel</option>
+                                <option value="tourism=guest_house">Guest House</option>
+                                <option value="tourism=apartment">Apartment / Short-term Rental</option>
+                                <option value="tourism=hostel">Hostel</option>
+                                <option value="tourism=motel">Motel</option>
+                            </optgroup>
+                            <optgroup label="Personal Services">
+                                <option value="shop=hairdresser">Hairdresser / Barber</option>
+                                <option value="shop=beauty">Beauty Salon</option>
+                                <option value="shop=massage">Massage</option>
+                                <option value="shop=tattoo">Tattoo</option>
+                                <option value="shop=optician">Optician</option>
+                                <option value="shop=laundry">Laundry</option>
+                                <option value="shop=travel_agency">Travel Agency</option>
+                            </optgroup>
+                            <optgroup label="Automotive">
+                                <option value="shop=car">Car Dealer</option>
+                                <option value="shop=car_repair">Car Repair</option>
+                                <option value="shop=car_parts">Car Parts</option>
+                                <option value="amenity=car_rental">Car Rental</option>
+                                <option value="amenity=fuel">Fuel Station</option>
+                                <option value="amenity=charging_station">EV Charging Station</option>
+                            </optgroup>
+                            <optgroup label="Financial">
+                                <option value="amenity=atm">Bitcoin ATM</option>
+                                <option value="amenity=bank">Bank</option>
+                                <option value="amenity=bureau_de_change">Bureau de Change</option>
+                                <option value="amenity=money_transfer">Money Transfer</option>
+                            </optgroup>
+                            <optgroup label="Health">
+                                <option value="amenity=pharmacy">Pharmacy</option>
+                                <option value="amenity=doctors">Doctor / Clinic</option>
+                                <option value="amenity=dentist">Dentist</option>
+                                <option value="amenity=veterinary">Veterinary</option>
+                            </optgroup>
+                            <optgroup label="Office &amp; Work">
+                                <option value="amenity=coworking_space">Coworking Space</option>
+                                <option value="office=lawyer">Lawyer</option>
+                                <option value="office=accountant">Accountant</option>
+                                <option value="office=it">IT Office</option>
+                                <option value="office=insurance">Insurance</option>
+                                <option value="office=estate_agent">Real Estate</option>
+                                <option value="office=yes">Other Office</option>
+                            </optgroup>
+                            <optgroup label="Leisure &amp; Recreation">
+                                <option value="leisure=fitness_centre">Gym / Fitness</option>
+                                <option value="leisure=sports_centre">Sports Centre</option>
+                                <option value="leisure=hackerspace">Hackerspace</option>
+                                <option value="leisure=escape_game">Escape Room</option>
+                                <option value="tourism=attraction">Tourist Attraction</option>
+                                <option value="tourism=museum">Museum</option>
+                                <option value="tourism=gallery">Art Gallery</option>
+                                <option value="amenity=cinema">Cinema</option>
+                                <option value="amenity=theatre">Theatre</option>
+                                <option value="amenity=nightclub">Nightclub</option>
+                            </optgroup>
+                            <optgroup label="Craft &amp; Trades">
+                                <option value="craft=brewery">Brewery</option>
+                                <option value="craft=winery">Winery</option>
+                                <option value="craft=photographer">Photographer</option>
+                                <option value="craft=electrician">Electrician</option>
+                                <option value="craft=plumber">Plumber</option>
+                                <option value="craft=jeweller">Jeweller</option>
+                                <option value="craft=watchmaker">Watchmaker</option>
+                                <option value="craft=shoemaker">Shoemaker / Cobbler</option>
                             </optgroup>
                             <optgroup label="Other">
-                                <option value="marketplace">Marketplace</option>
-                                <option value="shop">Other Shop</option>
+                                <option value="amenity=marketplace">Marketplace</option>
+                                <option value="amenity=vending_machine">Vending Machine</option>
+                                <option value="amenity=post_office">Post Office</option>
+                                <option value="amenity=internet_cafe">Internet Cafe</option>
+                                <option value="amenity=language_school">Language School</option>
                             </optgroup>
                         </select>
                         <span asp-validation-for="Settings.Category" class="text-danger"></span>
