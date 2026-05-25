@@ -103,8 +103,10 @@ public class OsmTagBuilder : IOsmTagBuilder
             return ("shop", "yes");
         var trimmed = category.Trim();
         var eq = trimmed.IndexOf('=');
-        if (eq <= 0 || eq == trimmed.Length - 1)
+        if (eq < 0)
             return ("amenity", trimmed);
+        if (eq == 0 || eq == trimmed.Length - 1)
+            return ("shop", "yes");
         return (trimmed.Substring(0, eq), trimmed.Substring(eq + 1));
     }
 }
