@@ -107,6 +107,12 @@ public class OsmTagBuilder : IOsmTagBuilder
             return ("amenity", trimmed);
         if (eq == 0 || eq == trimmed.Length - 1)
             return ("shop", "yes");
-        return (trimmed.Substring(0, eq), trimmed.Substring(eq + 1));
+        // Whitelist the parsed key — Category is POST-bound and a tampered
+        // request could otherwise inject arbitrary OSM tags (e.g. "name=…").
+        var key = trimmed.Substring(0, eq).Trim().ToLowerInvariant();
+        var value = trimmed.Substring(eq + 1).Trim();
+        if (value.Length == 0 || !CategoryKeys.Contains(key, StringComparer.Ordinal))
+            return ("shop", "yes");
+        return (key, value);
     }
 }
