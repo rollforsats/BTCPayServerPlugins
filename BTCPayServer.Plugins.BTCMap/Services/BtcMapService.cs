@@ -150,7 +150,7 @@ public class BtcMapService : IBtcMapService
         dbListing.Url = settings.Url;
         dbListing.BtcMapExternalId = externalId;
 
-        var submitToDirectory = dbListing.DirectorySubmittedAt == null;
+        var submitToDirectory = dbListing.DirectorySubmittedAt != null;
         var request = ToSubmitRequest(settings, externalId, acceptsLightning, acceptsOnchain, submitToDirectory);
 
         try
@@ -269,12 +269,13 @@ public class BtcMapService : IBtcMapService
         return picked.ToLowerInvariant();
     }
 
-    private string ComposeExternalId(string storeId)
+    private string ComposeExternalId(string storeId, string host = null)
     {
-        var host = _httpContextAccessor.HttpContext?.Request?.Host.Host;
-        if (string.IsNullOrEmpty(host))
-            throw new InvalidOperationException("Cannot compose ExternalId: HttpContext has no host.");
-        return $"{host.ToLowerInvariant()}:{storeId}";
+        var resolved = host ?? _httpContextAccessor.HttpContext?.Request?.Host.Host;
+        if (string.IsNullOrEmpty(resolved))
+            throw new InvalidOperationException(
+                "Cannot compose ExternalId: no host available. Caller must supply a host when running outside an HTTP request context.");
+        return $"{resolved.ToLowerInvariant()}:{storeId}";
     }
 
     private void ApplyBtcMapResponse(BtcMapListing listing, BtcMapSubmitResponse response, bool isFirstSubmission)

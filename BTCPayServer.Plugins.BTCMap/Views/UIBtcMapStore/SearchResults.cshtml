@@ -69,6 +69,13 @@
     <div class="col-xxl-constrain col-xl-8">
         <h3 class="mb-3">BTC Map — Search Results</h3>
 
+        @if (!Model.PluginBuilderReachable)
+        {
+            <div class="alert alert-warning" role="alert">
+                BTC Map submissions are temporarily unavailable. Please contact the administrator.
+            </div>
+        }
+
         @if (Model.SearchResults != null && Model.SearchResults.Count > 0)
         {
             <p>We found existing locations near your coordinates. Pick one to submit at its address, or scroll down to submit at your own coordinates.</p>
@@ -161,7 +168,8 @@
                                 <input type="hidden" name="Settings.DirectoryOnionUrl" value="@Model.Settings.DirectoryOnionUrl" />
                                 <input type="hidden" name="submitToDirectory" value="@(Model.Settings.SubmitToDirectory ? "true" : "false")" />
                                 <button type="submit" class="btn btn-sm btn-primary"
-                                        title="We'll submit a new listing at these coordinates.">
+                                        title="We'll submit a new listing at these coordinates."
+                                        disabled="@(!Model.PluginBuilderReachable)">
                                     Use this location
                                 </button>
                             </form>
@@ -199,7 +207,7 @@
             <input type="hidden" name="Settings.DirectoryGithub" value="@Model.Settings.DirectoryGithub" />
             <input type="hidden" name="Settings.DirectoryOnionUrl" value="@Model.Settings.DirectoryOnionUrl" />
             <input type="hidden" name="submitToDirectory" value="@(Model.Settings.SubmitToDirectory ? "true" : "false")" />
-            <button type="submit" class="btn btn-success">Create New Listing</button>
+            <button type="submit" class="btn btn-success" disabled="@(!Model.PluginBuilderReachable)">Create New Listing</button>
         </form>
 
         <hr class="my-4" />

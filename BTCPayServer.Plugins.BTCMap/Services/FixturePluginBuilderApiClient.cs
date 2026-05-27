@@ -24,7 +24,7 @@ public class FixturePluginBuilderApiClient : IPluginBuilderApiClient
             var ex = _scenario.SubmitFailure(request);
             _logger.LogWarning("[FIXTURE:{Scenario}] Submit → {Status} {Message}",
                 _scenarioName, ex.StatusCode, ex.Message);
-            throw ex;
+            return Task.FromException<BtcMapSubmitResponse>(ex);
         }
         var response = _scenario.SubmitSuccess(request);
         _logger.LogInformation("[FIXTURE:{Scenario}] Submit → success", _scenarioName);

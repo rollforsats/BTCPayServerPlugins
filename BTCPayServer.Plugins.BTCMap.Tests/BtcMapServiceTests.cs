@@ -144,7 +144,7 @@ public class BtcMapServiceTests
                 BtcMap = new BtcMapBtcMapResult { Id = 1, ExternalId = req.ExternalId }
             })
         };
-        var service = BuildService(factory: factory, api: api, host: "BTCPay.Example.COM");
+        var service = BuildService(factory: factory, api: api, host: "BTCPay.Example.COM:443");
 
         var listing = await service.SubmitListing(storeId, NewSettings(),
             acceptsLightning: false, acceptsOnchain: false, submitToDirectory: false);
