@@ -42,25 +42,20 @@ public class UIBtcMapStoreController : Controller
 
     private bool IsMainnet => _networkProvider.NetworkType == ChainName.Mainnet;
 
-    // BTC-LN is BTCPay's canonical Lightning paymentId; LNURL/BOLT12 reuse it
-    // rather than registering distinct top-level IDs, so this gate stays correct
-    // as Lightning protocols evolve.
-    private bool StoreAcceptsLightning()
-    {
-        var storeData = HttpContext.GetStoreData();
-        if (storeData == null) return false;
-        return storeData.GetEnabledPaymentIds()
-            .Select(p => p.ToString())
-            .Any(id => string.Equals(id, "BTC-LN", StringComparison.OrdinalIgnoreCase));
-    }
+    // Canonical PaymentMethodId strings are "<crypto>-<type>": BTC on-chain is "BTC-CHAIN",
+    // Lightning is "BTC-LN" (LNURL/BOLT12 reuse the LN id rather than registering distinct
+    // top-level IDs, so these gates stay correct as Lightning protocols evolve).
+    private bool StoreAcceptsLightning() => HasEnabledPaymentId("BTC-LN");
 
-    private bool StoreAcceptsOnchain()
+    private bool StoreAcceptsOnchain() => HasEnabledPaymentId("BTC-CHAIN");
+
+    private bool HasEnabledPaymentId(string paymentId)
     {
         var storeData = HttpContext.GetStoreData();
         if (storeData == null) return false;
         return storeData.GetEnabledPaymentIds()
             .Select(p => p.ToString())
-            .Any(id => string.Equals(id, "BTC", StringComparison.OrdinalIgnoreCase));
+            .Any(id => string.Equals(id, paymentId, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string NormalizeUrl(string input, string defaultScheme)
