@@ -34,6 +34,21 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
                     b.Property<bool>("AcceptsLightning")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("AcceptsOnchain")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("BtcMapLastEditedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("BtcMapExternalId")
+                        .HasColumnType("text");
+
+                    b.Property<long?>("BtcMapSubmissionId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset?>("BtcMapSubmittedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("BusinessName")
                         .HasColumnType("text");
 
@@ -67,14 +82,14 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
                     b.Property<string>("DirectoryType")
                         .HasColumnType("text");
 
+                    b.Property<string>("Email")
+                        .HasColumnType("text");
+
                     b.Property<string>("Github")
                         .HasColumnType("text");
 
                     b.Property<string>("HouseNumber")
                         .HasColumnType("text");
-
-                    b.Property<DateTimeOffset>("LastVerifiedAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<double>("Latitude")
                         .HasColumnType("double precision");
@@ -84,15 +99,6 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
 
                     b.Property<string>("OnionUrl")
                         .HasColumnType("text");
-
-                    b.Property<long>("OsmElementId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("OsmElementType")
-                        .HasColumnType("text");
-
-                    b.Property<int>("OsmElementVersion")
-                        .HasColumnType("integer");
 
                     b.Property<string>("Phone")
                         .HasColumnType("text");
@@ -118,53 +124,14 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("BtcMapExternalId");
+
+                    b.HasIndex("Status");
+
                     b.HasIndex("StoreId")
                         .IsUnique();
-
-                    b.HasIndex("Status", "LastVerifiedAt");
 
                     b.ToTable("Listings", "BTCPayServer.Plugins.BTCMap");
-                });
-
-            modelBuilder.Entity("BTCPayServer.Plugins.BTCMap.Data.BtcMapStoreOAuth", b =>
-                {
-                    b.Property<string>("Id")
-                        .HasColumnType("text");
-
-                    b.Property<DateTimeOffset?>("OsmConnectedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset?>("OsmDisconnectedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("OsmAccessTokenEncrypted")
-                        .HasColumnType("text");
-
-                    b.Property<string>("OsmClientId")
-                        .HasColumnType("text");
-
-                    b.Property<string>("OsmClientSecretEncrypted")
-                        .HasColumnType("text");
-
-                    b.Property<string>("OsmUsername")
-                        .HasColumnType("text");
-
-                    b.Property<string>("PendingState")
-                        .HasColumnType("text");
-
-                    b.Property<DateTimeOffset?>("PendingStateExpiresAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("StoreId")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("StoreId")
-                        .IsUnique();
-
-                    b.ToTable("StoreOAuth", "BTCPayServer.Plugins.BTCMap");
                 });
 #pragma warning restore 612, 618
         }

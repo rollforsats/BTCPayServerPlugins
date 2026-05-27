@@ -1,14 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
-using BTCPayServer.Abstractions.Contracts;
 using BTCPayServer.Abstractions.Models;
 using BTCPayServer.Plugins.BTCMap.Data;
 using BTCPayServer.Plugins.BTCMap.Models;
 using BTCPayServer.Plugins.BTCMap.Services;
-using BTCPayServer.Plugins.BTCMap.Services.Osm;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Infrastructure;
@@ -23,14 +21,7 @@ public class BtcMapServiceTests
     {
         var expected = new BtcMapListing { Id = "abc", StoreId = "store-1", Status = ListingStatus.Active };
         var repo = new StubListingRepository { ToReturn = expected };
-        var service = new BtcMapService(
-            dbContextFactory: null,
-            listingRepository: repo,
-            apiClient: null,
-            overpassApiClient: null,
-            osmApiClient: null,
-            oauthRepo: null,
-            logger: new NullLogger<BtcMapService>());
+        var service = BuildService(repo: repo);
 
         var result = await service.GetListingForStore("store-1");
 
@@ -38,124 +29,177 @@ public class BtcMapServiceTests
         Assert.Equal("store-1", repo.RequestedStoreId);
     }
 
-    [Fact]
-    public async Task SubmitListing_NewNode_OsmSucceeds_DirectoryThrows_PersistsListingAndRethrows()
+    [Theory]
+    [InlineData("amenity=cafe", "cafe")]
+    [InlineData("shop=jewelry", "jewelry")]
+    [InlineData("tourism=hotel", "hotel")]
+    [InlineData("craft=brewery", "brewery")]
+    [InlineData("office=lawyer", "lawyer")]
+    [InlineData("shop=yes", "shop")]
+    [InlineData("office=yes", "office")]
+    [InlineData("AMENITY=CAFE", "cafe")]
+    [InlineData("cafe", "cafe")]
+    [InlineData(null, null)]
+    [InlineData("", null)]
+    public void NormalizeCategory_StripsKey_And_HandlesYesFallback(string input, string expected)
     {
-        // Two contracts at once:
-        //   1. OSM identifiers MUST persist before re-throw — a retry must target the
-        //      existing node, not create a duplicate at the same coordinates.
-        //   2. PluginBuilderApiException MUST propagate so the controller's existing
-        //      catch block renders the error to the merchant. Swallowing here was
-        //      the 2026-05-11 silent-failure bug.
-        const string storeId = "store-blocker-create";
-        var factory = TestDbFactory.Create();
-        var osm = new StubOsmApiClient
-        {
-            OnCreate = (sid, _, _) => Task.FromResult(new OsmCreateResult { NodeId = 9001, ChangesetId = 1, Version = 1 })
-        };
-        var api = new StubPluginBuilderApiClient
-        {
-            OnSubmit = _ => throw new PluginBuilderApiException(502, "directory upstream 502")
-        };
-        var oauthRepo = new ConnectedOAuthRepo(storeId);
-        var service = new BtcMapService(factory, new StubListingRepository(),
-            api, new StubOverpassApiClient(), osm, oauthRepo, new NullLogger<BtcMapService>());
-
-        var settings = NewSettingsWithDirectory();
-        var ex = await Assert.ThrowsAsync<PluginBuilderApiException>(
-            () => service.SubmitListing(storeId, settings,
-                acceptsLightning: true, submitToDirectory: true, osmType: null, osmId: null));
-        Assert.Equal(502, ex.StatusCode);
-
-        await using var verify = factory.CreateContext();
-        var persisted = await verify.Listings.SingleAsync(l => l.StoreId == storeId);
-        Assert.Equal(9001, persisted.OsmElementId);
-        Assert.Equal("node", persisted.OsmElementType);
-        Assert.Equal(ListingStatus.Active, persisted.Status);
-        Assert.Null(persisted.DirectorySubmittedAt);
-        Assert.Null(persisted.DirectoryPrUrl);
+        Assert.Equal(expected, BtcMapService.NormalizeCategory(input));
     }
 
     [Fact]
-    public async Task SubmitListing_LinkExisting_OsmSucceeds_DirectoryThrows_PersistsListingAndRethrows()
+    public async Task SubmitListing_HappyPath_PersistsBtcMapIdentifiers()
     {
-        // Sibling for the link-existing arm of DispatchOsmSubmitAsync. Same contract:
-        // OSM identifiers persisted before re-throw, and the exception propagates.
-        const string storeId = "store-blocker-link";
+        const string storeId = "store-1";
         var factory = TestDbFactory.Create();
-        var osm = new StubOsmApiClient
+        var api = new StubPluginBuilderApiClient
         {
-            OnUpdate = (_, nodeId, _, m, _) => Task.FromResult(new OsmUpdateResult
+            OnSubmit = req => Task.FromResult(new BtcMapSubmitResponse
             {
-                NewVersion = 7,
-                ResolvedName = m.Name
+                BtcMap = new BtcMapBtcMapResult { Id = 42, Origin = "btcpayserver", ExternalId = req.ExternalId }
             })
         };
-        var api = new StubPluginBuilderApiClient
-        {
-            OnSubmit = _ => throw new PluginBuilderApiException(502, "directory upstream 502")
-        };
-        var oauthRepo = new ConnectedOAuthRepo(storeId);
-        var service = new BtcMapService(factory, new StubListingRepository(),
-            api, new StubOverpassApiClient(), osm, oauthRepo, new NullLogger<BtcMapService>());
+        var service = BuildService(factory: factory, api: api, host: "btcpay.example.com");
 
-        var settings = NewSettingsWithDirectory();
-        await Assert.ThrowsAsync<PluginBuilderApiException>(
-            () => service.SubmitListing(storeId, settings,
-                acceptsLightning: false, submitToDirectory: true, osmType: "node", osmId: 5000));
+        var listing = await service.SubmitListing(storeId, NewSettings(),
+            acceptsLightning: true, acceptsOnchain: false, submitToDirectory: false);
+
+        Assert.Equal(ListingStatus.Active, listing.Status);
+        Assert.Equal(42, listing.BtcMapSubmissionId);
+        Assert.Equal("btcpay.example.com:store-1", listing.BtcMapExternalId);
+        Assert.NotNull(listing.BtcMapSubmittedAt);
+        Assert.Null(listing.BtcMapLastEditedAt);
 
         await using var verify = factory.CreateContext();
         var persisted = await verify.Listings.SingleAsync(l => l.StoreId == storeId);
-        Assert.Equal(5000, persisted.OsmElementId);
-        Assert.Equal("node", persisted.OsmElementType);
-        Assert.Equal(7, persisted.OsmElementVersion);
-        Assert.Equal(ListingStatus.Active, persisted.Status);
-        Assert.Null(persisted.DirectorySubmittedAt);
-        Assert.Null(persisted.DirectoryPrUrl);
+        Assert.Equal(42, persisted.BtcMapSubmissionId);
+        Assert.Equal("btcpay.example.com:store-1", persisted.BtcMapExternalId);
     }
 
     [Fact]
-    public async Task SubmitListing_DirectoryThrows_SaveAlsoThrows_OriginalExceptionWins()
+    public async Task SubmitListing_ApiThrows_PersistsErrorStatus_AndRethrows()
     {
-        // Pins the round-3 fix: when the directory leg throws AND the catch-block
-        // SaveChangesAsync also fails (DB blip, concurrency, EF validation), the
-        // original PluginBuilderApiException MUST still propagate so the controller's
-        // typed catch renders the error. Without the inner try/catch, the EF
-        // exception would replace the in-flight one on the call stack.
-        const string storeId = "store-blocker-save-fails";
-        var factory = TestDbFactory.Create(onSave: () => throw new DbUpdateException("simulated EF failure"));
-        var osm = new StubOsmApiClient
-        {
-            OnCreate = (sid, _, _) => Task.FromResult(new OsmCreateResult { NodeId = 9002, ChangesetId = 1, Version = 1 })
-        };
+        const string storeId = "store-1";
+        var factory = TestDbFactory.Create();
         var api = new StubPluginBuilderApiClient
         {
-            OnSubmit = _ => throw new PluginBuilderApiException(502, "directory upstream 502")
+            OnSubmit = _ => throw new PluginBuilderApiException(503, "btcmap-not-configured")
         };
-        var oauthRepo = new ConnectedOAuthRepo(storeId);
-        var service = new BtcMapService(factory, new StubListingRepository(),
-            api, new StubOverpassApiClient(), osm, oauthRepo, new NullLogger<BtcMapService>());
+        var service = BuildService(factory: factory, api: api);
 
-        var settings = NewSettingsWithDirectory();
         var ex = await Assert.ThrowsAsync<PluginBuilderApiException>(
-            () => service.SubmitListing(storeId, settings,
-                acceptsLightning: true, submitToDirectory: true, osmType: null, osmId: null));
-        Assert.Equal(502, ex.StatusCode);
-        Assert.Equal("directory upstream 502", ex.Message);
+            () => service.SubmitListing(storeId, NewSettings(),
+                acceptsLightning: true, acceptsOnchain: false, submitToDirectory: false));
+        Assert.Equal(503, ex.StatusCode);
+
+        await using var verify = factory.CreateContext();
+        var persisted = await verify.Listings.SingleAsync(l => l.StoreId == storeId);
+        Assert.Equal(ListingStatus.Error, persisted.Status);
     }
 
-    private static BtcMapStoreSettings NewSettingsWithDirectory() => new()
+    [Fact]
+    public async Task SubmitListing_ResubmitWithSameStoreId_UpdatesExistingRow_AndBumpsLastEditedAt()
+    {
+        const string storeId = "store-1";
+        var factory = TestDbFactory.Create();
+        var api = new StubPluginBuilderApiClient
+        {
+            OnSubmit = req => Task.FromResult(new BtcMapSubmitResponse
+            {
+                BtcMap = new BtcMapBtcMapResult { Id = 42, Origin = "btcpayserver", ExternalId = req.ExternalId }
+            })
+        };
+        var service = BuildService(factory: factory, api: api, host: "btcpay.example.com");
+
+        var first = await service.SubmitListing(storeId, NewSettings(),
+            acceptsLightning: false, acceptsOnchain: false, submitToDirectory: false);
+        Assert.NotNull(first.BtcMapSubmittedAt);
+
+        await Task.Delay(10);
+
+        var settings = NewSettings();
+        settings.BusinessName = "Updated Cafe";
+        var second = await service.SubmitListing(storeId, settings,
+            acceptsLightning: true, acceptsOnchain: true, submitToDirectory: false);
+
+        Assert.Equal("Updated Cafe", second.BusinessName);
+        Assert.True(second.AcceptsLightning);
+        Assert.True(second.AcceptsOnchain);
+        Assert.Equal(first.BtcMapSubmittedAt, second.BtcMapSubmittedAt);
+        Assert.NotNull(second.BtcMapLastEditedAt);
+
+        await using var verify = factory.CreateContext();
+        var allRows = await verify.Listings.Where(l => l.StoreId == storeId).ToListAsync();
+        Assert.Single(allRows);
+    }
+
+    [Fact]
+    public async Task SubmitListing_HostLowercased_AndPortStripped()
+    {
+        const string storeId = "store-1";
+        var factory = TestDbFactory.Create();
+        var api = new StubPluginBuilderApiClient
+        {
+            OnSubmit = req => Task.FromResult(new BtcMapSubmitResponse
+            {
+                BtcMap = new BtcMapBtcMapResult { Id = 1, ExternalId = req.ExternalId }
+            })
+        };
+        var service = BuildService(factory: factory, api: api, host: "BTCPay.Example.COM");
+
+        var listing = await service.SubmitListing(storeId, NewSettings(),
+            acceptsLightning: false, acceptsOnchain: false, submitToDirectory: false);
+        Assert.Equal("btcpay.example.com:store-1", listing.BtcMapExternalId);
+    }
+
+    [Fact]
+    public async Task SubmitListing_GlobalCountry_OmittedFromBtcMapRequest()
+    {
+        const string storeId = "store-1";
+        var factory = TestDbFactory.Create();
+        BtcMapSubmitRequest captured = null;
+        var api = new StubPluginBuilderApiClient
+        {
+            OnSubmit = req => { captured = req; return Task.FromResult(new BtcMapSubmitResponse()); }
+        };
+        var service = BuildService(factory: factory, api: api);
+
+        var settings = NewSettings();
+        settings.Country = "GLOBAL";
+        await service.SubmitListing(storeId, settings,
+            acceptsLightning: false, acceptsOnchain: false, submitToDirectory: false);
+
+        Assert.NotNull(captured);
+        Assert.Null(captured.Country);
+    }
+
+    private static BtcMapStoreSettings NewSettings() => new()
     {
         BusinessName = "Bitcoin Cafe",
-        Category = "cafe",
+        Category = "amenity=cafe",
         Latitude = 32.6838298,
         Longitude = -117.1839771,
         Url = "https://example.test",
-        DirectoryDescription = "A cafe that takes bitcoin",
-        DirectoryType = "merchants",
-        DirectorySubType = "food-drink",
-        SubmitToDirectory = true
+        SubmitToDirectory = false
     };
+
+    private static BtcMapService BuildService(
+        BtcMapDbContextFactory factory = null,
+        IListingRepository repo = null,
+        IPluginBuilderApiClient api = null,
+        string host = "btcpay.example.com")
+    {
+        var http = new DefaultHttpContext();
+        http.Request.Host = new HostString(host);
+        var accessor = new HttpContextAccessor { HttpContext = http };
+
+        return new BtcMapService(
+            dbContextFactory: factory ?? TestDbFactory.Create(),
+            listingRepository: repo ?? new StubListingRepository(),
+            apiClient: api ?? new StubPluginBuilderApiClient(),
+            overpassApiClient: new StubOverpassApiClient(),
+            httpContextAccessor: accessor,
+            logger: new NullLogger<BtcMapService>());
+    }
 
     private class StubListingRepository : IListingRepository
     {
@@ -169,49 +213,14 @@ public class BtcMapServiceTests
         }
     }
 
-    private class ConnectedOAuthRepo : IBtcMapStoreOAuthRepository
-    {
-        private readonly string _connectedStoreId;
-        public ConnectedOAuthRepo(string connectedStoreId) { _connectedStoreId = connectedStoreId; }
-
-        public Task<BtcMapStoreOAuthDecrypted> GetForStoreAsync(string storeId)
-            => Task.FromResult(storeId == _connectedStoreId
-                ? new BtcMapStoreOAuthDecrypted { OsmAccessToken = "tok-test", OsmUsername = "tester" }
-                : null);
-
-        public Task UpsertAsync(string storeId, BtcMapStoreOAuthDecrypted state) => Task.CompletedTask;
-        public Task SaveClientCredentialsAsync(string storeId, string clientId, string clientSecret) => Task.CompletedTask;
-        public Task SaveAccessTokenAsync(string storeId, string accessToken, string username) => Task.CompletedTask;
-        public Task ClearOAuthAsync(string storeId) => Task.CompletedTask;
-        public Task ClearTokenOnlyAsync(string storeId) => Task.CompletedTask;
-        public Task SetPendingStateAsync(string storeId, string state, DateTimeOffset expiresAt) => Task.CompletedTask;
-        public Task ClearPendingStateAsync(string storeId) => Task.CompletedTask;
-    }
-
-    private class StubOsmApiClient : IOsmApiClient
-    {
-        public Func<string, BtcMapMerchant, CancellationToken, Task<OsmCreateResult>> OnCreate { get; set; }
-        public Func<string, long, string, BtcMapMerchant, CancellationToken, Task<OsmUpdateResult>> OnUpdate { get; set; }
-
-        public Task<OsmCreateResult> CreateNodeAsync(string storeId, BtcMapMerchant merchant, CancellationToken ct)
-            => OnCreate != null ? OnCreate(storeId, merchant, ct) : throw new InvalidOperationException("OnCreate not stubbed");
-
-        public Task<OsmUpdateResult> UpdateNodeAsync(string storeId, long nodeId, string nodeType, BtcMapMerchant merchant, CancellationToken ct)
-            => OnUpdate != null ? OnUpdate(storeId, nodeId, nodeType, merchant, ct) : throw new InvalidOperationException("OnUpdate not stubbed");
-
-        public Task<int> ReverifyNodeAsync(string storeId, long nodeId, string nodeType, BtcMapMerchant merchant, CancellationToken ct)
-            => throw new InvalidOperationException("ReverifyNodeAsync not used in these tests");
-
-        public Task<OsmUnlistResult> UnlistNodeAsync(string storeId, long nodeId, string nodeType, string merchantName, CancellationToken ct)
-            => throw new InvalidOperationException("UnlistNodeAsync not used in these tests");
-    }
-
     private class StubPluginBuilderApiClient : IPluginBuilderApiClient
     {
         public Func<BtcMapSubmitRequest, Task<BtcMapSubmitResponse>> OnSubmit { get; set; }
 
         public Task<BtcMapSubmitResponse> SubmitAsync(BtcMapSubmitRequest request)
             => OnSubmit != null ? OnSubmit(request) : Task.FromResult(new BtcMapSubmitResponse());
+
+        public Task<bool> PingAsync() => Task.FromResult(true);
     }
 
     private class StubOverpassApiClient : IOverpassApiClient
@@ -230,53 +239,26 @@ public class BtcMapServiceTests
     }
 }
 
-/// <summary>
-/// In-memory BtcMapDbContextFactory for unit tests. Each Create() returns a factory
-/// scoped to a unique database name so parallel tests don't share state. The optional
-/// onSave hook fires before each SaveChangesAsync — pass a throwing func to simulate
-/// EF failures (e.g., concurrency conflicts, DbUpdateException).
-/// </summary>
 internal static class TestDbFactory
 {
-    public static BtcMapDbContextFactory Create(Func<Task> onSave = null)
-        => new InMemoryFactory(Guid.NewGuid().ToString("N"), onSave);
+    public static BtcMapDbContextFactory Create()
+        => new InMemoryFactory(Guid.NewGuid().ToString("N"));
 
     private sealed class InMemoryFactory : BtcMapDbContextFactory
     {
         private readonly string _dbName;
-        private readonly Func<Task> _onSave;
 
-        public InMemoryFactory(string dbName, Func<Task> onSave)
+        public InMemoryFactory(string dbName)
             : base(Options.Create(new DatabaseOptions { ConnectionString = "Host=ignored;Database=ignored" }))
         {
             _dbName = dbName;
-            _onSave = onSave;
         }
 
         public override BtcMapDbContext CreateContext(Action<NpgsqlDbContextOptionsBuilder> npgsqlOptionsAction = null)
         {
             var builder = new DbContextOptionsBuilder<BtcMapDbContext>();
             builder.UseInMemoryDatabase(_dbName);
-            return _onSave == null
-                ? new BtcMapDbContext(builder.Options)
-                : new HookedDbContext(builder.Options, _onSave);
-        }
-    }
-
-    private sealed class HookedDbContext : BtcMapDbContext
-    {
-        private readonly Func<Task> _onSave;
-
-        public HookedDbContext(DbContextOptions<BtcMapDbContext> options, Func<Task> onSave)
-            : base(options)
-        {
-            _onSave = onSave;
-        }
-
-        public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
-        {
-            await _onSave();
-            return await base.SaveChangesAsync(cancellationToken);
+            return new BtcMapDbContext(builder.Options);
         }
     }
 }

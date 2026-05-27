@@ -71,7 +71,7 @@
 
         @if (Model.SearchResults != null && Model.SearchResults.Count > 0)
         {
-            <p>We found existing locations near your coordinates. If your business is already on the map, select it below.</p>
+            <p>We found existing locations near your coordinates. Pick one to submit at its address, or scroll down to submit at your own coordinates.</p>
 
             <div class="list-group mb-4">
                 @foreach (var element in Model.SearchResults)
@@ -135,48 +135,35 @@
                                 tags.TryGetValue("addr:city", out var elCity);
                                 tags.TryGetValue("addr:postcode", out var elPostCode);
                                 tags.TryGetValue("addr:country", out var elCountry);
-                                // Store category as "key=value" (e.g. "shop=clothes") so
-                                // OsmTagBuilder routes it to the correct OSM top-level key.
-                                // If the existing OSM element already has a category, prefer
-                                // that — it's the curator's choice. category.Key is title-cased
-                                // for display, so lower-case it for the tag.
                                 var elCategory = category.HasValue
                                     ? $"{category.Value.Key.ToLowerInvariant()}={category.Value.Value}"
                                     : Model.Settings.Category;
                             }
-                            <form method="post" asp-action="LinkExisting" asp-route-storeId="@storeId" class="flex-shrink-0">
+                            <form method="post" asp-action="CreateNew" asp-route-storeId="@storeId" class="flex-shrink-0">
                                 @Html.AntiForgeryToken()
-                                <input type="hidden" name="BusinessName" value="@Model.Settings.BusinessName" />
-                                <input type="hidden" name="Category" value="@elCategory" />
-                                <input type="hidden" name="Latitude" value="@elLat" />
-                                <input type="hidden" name="Longitude" value="@elLon" />
-                                <input type="hidden" name="HouseNumber" value="@elHn" />
-                                <input type="hidden" name="Street" value="@elStreet" />
-                                <input type="hidden" name="City" value="@elCity" />
-                                <input type="hidden" name="PostCode" value="@elPostCode" />
-                                <input type="hidden" name="Country" value="@elCountry" />
-                                <input type="hidden" name="Phone" value="@Model.Settings.Phone" />
-                                <input type="hidden" name="Url" value="@Model.Settings.Url" />
-                                <input type="hidden" name="DirectoryDescription" value="@Model.Settings.DirectoryDescription" />
-                                <input type="hidden" name="DirectoryTwitter" value="@Model.Settings.DirectoryTwitter" />
-                                <input type="hidden" name="DirectoryType" value="@Model.Settings.DirectoryType" />
-                                <input type="hidden" name="DirectorySubType" value="@Model.Settings.DirectorySubType" />
-                                <input type="hidden" name="DirectoryGithub" value="@Model.Settings.DirectoryGithub" />
-                                <input type="hidden" name="DirectoryOnionUrl" value="@Model.Settings.DirectoryOnionUrl" />
-                                <input type="hidden" name="osmType" value="@element.Type" />
-                                <input type="hidden" name="osmId" value="@element.Id" />
+                                <input type="hidden" name="Settings.BusinessName" value="@Model.Settings.BusinessName" />
+                                <input type="hidden" name="Settings.Category" value="@elCategory" />
+                                <input type="hidden" name="Settings.Latitude" value="@elLat" />
+                                <input type="hidden" name="Settings.Longitude" value="@elLon" />
+                                <input type="hidden" name="Settings.HouseNumber" value="@elHn" />
+                                <input type="hidden" name="Settings.Street" value="@elStreet" />
+                                <input type="hidden" name="Settings.City" value="@elCity" />
+                                <input type="hidden" name="Settings.PostCode" value="@elPostCode" />
+                                <input type="hidden" name="Settings.Country" value="@elCountry" />
+                                <input type="hidden" name="Settings.Phone" value="@Model.Settings.Phone" />
+                                <input type="hidden" name="Settings.Email" value="@Model.Settings.Email" />
+                                <input type="hidden" name="Settings.Url" value="@Model.Settings.Url" />
+                                <input type="hidden" name="Settings.DirectoryDescription" value="@Model.Settings.DirectoryDescription" />
+                                <input type="hidden" name="Settings.DirectoryTwitter" value="@Model.Settings.DirectoryTwitter" />
+                                <input type="hidden" name="Settings.DirectoryType" value="@Model.Settings.DirectoryType" />
+                                <input type="hidden" name="Settings.DirectorySubType" value="@Model.Settings.DirectorySubType" />
+                                <input type="hidden" name="Settings.DirectoryGithub" value="@Model.Settings.DirectoryGithub" />
+                                <input type="hidden" name="Settings.DirectoryOnionUrl" value="@Model.Settings.DirectoryOnionUrl" />
                                 <input type="hidden" name="submitToDirectory" value="@(Model.Settings.SubmitToDirectory ? "true" : "false")" />
-                                @if (hasBtc)
-                                {
-                                    <button type="submit" class="btn btn-sm btn-outline-primary"
-                                            title="This location is already on BTC Map. Linking associates it with your BTCPay store.">
-                                        Link existing listing
-                                    </button>
-                                }
-                                else
-                                {
-                                    <button type="submit" class="btn btn-sm btn-primary">Select this</button>
-                                }
+                                <button type="submit" class="btn btn-sm btn-primary"
+                                        title="We'll submit a new listing at these coordinates.">
+                                    Use this location
+                                </button>
                             </form>
                         </div>
                     </div>
@@ -203,6 +190,7 @@
             <input type="hidden" name="Settings.PostCode" value="@Model.Settings.PostCode" />
             <input type="hidden" name="Settings.Country" value="@Model.Settings.Country" />
             <input type="hidden" name="Settings.Phone" value="@Model.Settings.Phone" />
+            <input type="hidden" name="Settings.Email" value="@Model.Settings.Email" />
             <input type="hidden" name="Settings.Url" value="@Model.Settings.Url" />
             <input type="hidden" name="Settings.DirectoryDescription" value="@Model.Settings.DirectoryDescription" />
             <input type="hidden" name="Settings.DirectoryTwitter" value="@Model.Settings.DirectoryTwitter" />

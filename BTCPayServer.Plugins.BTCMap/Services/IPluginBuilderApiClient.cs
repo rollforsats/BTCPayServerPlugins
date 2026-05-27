@@ -6,4 +6,5 @@ namespace BTCPayServer.Plugins.BTCMap.Services;
 public interface IPluginBuilderApiClient
 {
     Task<BtcMapSubmitResponse> SubmitAsync(BtcMapSubmitRequest request);
+    Task<bool> PingAsync();
 }

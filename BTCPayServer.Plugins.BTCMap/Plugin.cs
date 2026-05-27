@@ -3,7 +3,6 @@ using BTCPayServer.Abstractions.Contracts;
 using BTCPayServer.Abstractions.Models;
 using BTCPayServer.Abstractions.Services;
 using BTCPayServer.Plugins.BTCMap.Services;
-using BTCPayServer.Plugins.BTCMap.Services.Osm;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -20,10 +19,8 @@ public class Plugin : BaseBTCPayServerPlugin
 
     public override void Execute(IServiceCollection services)
     {
-        // UI extensions
         services.AddUIExtension("store-integrations-nav", "BtcMapStoreNav");
 
-        // Database
         services.AddHostedService<PluginMigrationRunner>();
         services.AddSingleton<BtcMapDbContextFactory>();
         services.AddDbContext<BtcMapDbContext>((provider, o) =>
@@ -32,30 +29,19 @@ public class Plugin : BaseBTCPayServerPlugin
             factory.ConfigureBuilder(o);
         });
 
-        // Services
         services.AddSingleton<IListingRepository, ListingRepository>();
-        services.AddSingleton<IBtcMapStoreOAuthRepository, BtcMapStoreOAuthRepository>();
-
-        // OSM OAuth + tagging
-        services.AddSingleton<IOsmAuthService, OsmAuthService>();
-        services.AddSingleton<IOsmTagBuilder>(_ => new OsmTagBuilder());
-        services.AddSingleton<IOsmHttpClient, OsmHttpClient>();
-        services.AddSingleton<IOsmChangesetManager, OsmChangesetManager>();
-        services.AddSingleton<IOsmApiClient, OsmApiClient>();
+        services.AddSingleton<BtcMapCapabilityState>();
         services.AddSingleton<BtcMapService>();
         services.AddSingleton<IBtcMapService>(sp => sp.GetRequiredService<BtcMapService>());
         services.AddSingleton<PluginBuilderApiClient>();
-        services.AddSingleton<IPluginBuilderApiClient>(sp => sp.GetRequiredService<PluginBuilderApiClient>());
         services.AddSingleton<DirectoryListingChecker>();
         services.AddSingleton<IDirectoryListingChecker>(sp => sp.GetRequiredService<DirectoryListingChecker>());
         services.AddSingleton<OverpassApiClient>();
         services.AddSingleton<NominatimApiClient>();
         services.AddSingleton<INominatimApiClient>(sp => sp.GetRequiredService<NominatimApiClient>());
 
-        // IOverpassApiClient binding — dev fixture mode when BTCMAP_OVERPASS_SCENARIO is
-        // set on non-mainnet Development builds, otherwise the real OverpassApiClient.
-        var scenarioName = Environment.GetEnvironmentVariable("BTCMAP_OVERPASS_SCENARIO");
-        if (!string.IsNullOrWhiteSpace(scenarioName))
+        var overpassScenario = Environment.GetEnvironmentVariable("BTCMAP_OVERPASS_SCENARIO");
+        if (!string.IsNullOrWhiteSpace(overpassScenario))
         {
             services.AddSingleton<IOverpassApiClient>(sp =>
             {
@@ -64,16 +50,16 @@ public class Plugin : BaseBTCPayServerPlugin
 
                 if (!env.IsDevelopment())
                     throw new InvalidOperationException(
-                        $"BTCMAP_OVERPASS_SCENARIO='{scenarioName}' refused: ASPNETCORE_ENVIRONMENT is not Development");
+                        $"BTCMAP_OVERPASS_SCENARIO='{overpassScenario}' refused: ASPNETCORE_ENVIRONMENT is not Development");
                 if (networkProvider.NetworkType == ChainName.Mainnet)
                     throw new InvalidOperationException(
-                        $"BTCMAP_OVERPASS_SCENARIO='{scenarioName}' refused: running on mainnet");
+                        $"BTCMAP_OVERPASS_SCENARIO='{overpassScenario}' refused: running on mainnet");
 
                 var logger = sp.GetRequiredService<ILogger<FixtureOverpassApiClient>>();
                 logger.LogWarning(
                     "Overpass fixture mode ACTIVE — scenario '{Scenario}'. All Overpass search calls will return hardcoded data.",
-                    scenarioName);
-                return new FixtureOverpassApiClient(scenarioName, logger);
+                    overpassScenario);
+                return new FixtureOverpassApiClient(overpassScenario, logger);
             });
         }
         else
@@ -81,7 +67,33 @@ public class Plugin : BaseBTCPayServerPlugin
             services.AddSingleton<IOverpassApiClient>(sp => sp.GetRequiredService<OverpassApiClient>());
         }
 
-        // Named HTTP clients
+        var pluginBuilderScenario = Environment.GetEnvironmentVariable("BTCMAP_PLUGINBUILDER_SCENARIO");
+        if (!string.IsNullOrWhiteSpace(pluginBuilderScenario))
+        {
+            services.AddSingleton<IPluginBuilderApiClient>(sp =>
+            {
+                var env = sp.GetRequiredService<IHostEnvironment>();
+                var networkProvider = sp.GetRequiredService<BTCPayNetworkProvider>();
+
+                if (!env.IsDevelopment())
+                    throw new InvalidOperationException(
+                        $"BTCMAP_PLUGINBUILDER_SCENARIO='{pluginBuilderScenario}' refused: ASPNETCORE_ENVIRONMENT is not Development");
+                if (networkProvider.NetworkType == ChainName.Mainnet)
+                    throw new InvalidOperationException(
+                        $"BTCMAP_PLUGINBUILDER_SCENARIO='{pluginBuilderScenario}' refused: running on mainnet");
+
+                var logger = sp.GetRequiredService<ILogger<FixturePluginBuilderApiClient>>();
+                logger.LogWarning(
+                    "Plugin-builder fixture mode ACTIVE — scenario '{Scenario}'. All BTC Map submissions will use hardcoded responses.",
+                    pluginBuilderScenario);
+                return new FixturePluginBuilderApiClient(pluginBuilderScenario, logger);
+            });
+        }
+        else
+        {
+            services.AddSingleton<IPluginBuilderApiClient>(sp => sp.GetRequiredService<PluginBuilderApiClient>());
+        }
+
         services.AddHttpClient("OverpassApi", client =>
         {
             client.BaseAddress = new Uri("https://overpass-api.de/");
@@ -99,12 +111,6 @@ public class Plugin : BaseBTCPayServerPlugin
             client.BaseAddress = new Uri("https://raw.githubusercontent.com/");
             client.DefaultRequestHeaders.Add("User-Agent", "BTCPayServer-BtcMap-Plugin/1.0");
             client.Timeout = TimeSpan.FromSeconds(20);
-        });
-        services.AddHttpClient(OsmHttpClient.HttpClientName, client =>
-        {
-            // No BaseAddress set here — absolute URLs are constructed per-call from
-            // the network mode (mainnet vs dev) inside OsmHttpClient and OsmAuthService.
-            client.Timeout = TimeSpan.FromSeconds(30);
         });
     }
 }
