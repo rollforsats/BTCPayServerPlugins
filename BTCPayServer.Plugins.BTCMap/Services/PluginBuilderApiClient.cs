@@ -114,24 +114,6 @@ public class PluginBuilderApiClient : IPluginBuilderApiClient
         }
     }
 
-    public async Task<bool> PingAsync()
-    {
-        using var scope = _services.CreateScope();
-        var httpClient = scope.ServiceProvider
-            .GetRequiredService<BTCPayServer.Plugins.PluginBuilderClient>().HttpClient;
-
-        try
-        {
-            using var response = await httpClient.GetAsync("/apis/btcmaps/v1/ping");
-            return response.IsSuccessStatusCode;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "BTC Map capability probe failed");
-            return false;
-        }
-    }
-
     private static (string error, string correlationId) TryParseOutcome(string body)
     {
         try

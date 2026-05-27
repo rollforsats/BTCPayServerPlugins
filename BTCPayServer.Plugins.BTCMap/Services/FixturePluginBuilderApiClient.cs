@@ -30,11 +30,4 @@ public class FixturePluginBuilderApiClient : IPluginBuilderApiClient
         _logger.LogInformation("[FIXTURE:{Scenario}] Submit → success", _scenarioName);
         return Task.FromResult(response);
     }
-
-    public Task<bool> PingAsync()
-    {
-        _logger.LogInformation("[FIXTURE:{Scenario}] Ping → {Reachable}",
-            _scenarioName, _scenario.PingSucceeds);
-        return Task.FromResult(_scenario.PingSucceeds);
-    }
 }

@@ -30,7 +30,6 @@ public class Plugin : BaseBTCPayServerPlugin
         });
 
         services.AddSingleton<IListingRepository, ListingRepository>();
-        services.AddSingleton<BtcMapCapabilityState>();
         services.AddSingleton<BtcMapService>();
         services.AddSingleton<IBtcMapService>(sp => sp.GetRequiredService<BtcMapService>());
         services.AddSingleton<PluginBuilderApiClient>();

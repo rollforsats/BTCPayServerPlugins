@@ -78,27 +78,6 @@ public class PluginBuilderApiClientTests
         Assert.Equal("host:store", response.BtcMap.ExternalId);
     }
 
-    [Fact]
-    public async Task Ping_returns_true_on_2xx()
-    {
-        var client = BuildClient(HttpStatusCode.OK, """{"ok":true,"service":"btcmaps","version":"v1"}""");
-        Assert.True(await client.PingAsync());
-    }
-
-    [Fact]
-    public async Task Ping_returns_false_on_5xx()
-    {
-        var client = BuildClient(HttpStatusCode.ServiceUnavailable, "");
-        Assert.False(await client.PingAsync());
-    }
-
-    [Fact]
-    public async Task Ping_returns_false_on_transport_error()
-    {
-        var client = BuildClient(new HttpRequestException("network down"));
-        Assert.False(await client.PingAsync());
-    }
-
     private static async Task<PluginBuilderApiException> SubmitAndExpectAsync(HttpStatusCode status, string body)
     {
         var client = BuildClient(status, body);
@@ -112,12 +91,6 @@ public class PluginBuilderApiClientTests
         {
             Content = new StringContent(body ?? "", Encoding.UTF8, "application/json")
         });
-        return BuildClient(handler);
-    }
-
-    private static PluginBuilderApiClient BuildClient(Exception transportException)
-    {
-        var handler = new StubHandler(_ => throw transportException);
         return BuildClient(handler);
     }
 

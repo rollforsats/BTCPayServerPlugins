@@ -219,8 +219,6 @@ public class BtcMapServiceTests
 
         public Task<BtcMapSubmitResponse> SubmitAsync(BtcMapSubmitRequest request)
             => OnSubmit != null ? OnSubmit(request) : Task.FromResult(new BtcMapSubmitResponse());
-
-        public Task<bool> PingAsync() => Task.FromResult(true);
     }
 
     private class StubOverpassApiClient : IOverpassApiClient

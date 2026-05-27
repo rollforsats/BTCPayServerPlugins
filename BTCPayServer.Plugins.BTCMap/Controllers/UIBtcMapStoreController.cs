@@ -23,7 +23,6 @@ public class UIBtcMapStoreController : Controller
     private readonly IBtcMapService _btcMapService;
     private readonly INominatimApiClient _nominatimApiClient;
     private readonly IDirectoryListingChecker _directoryListingChecker;
-    private readonly BtcMapCapabilityState _capabilityState;
     private readonly BTCPayNetworkProvider _networkProvider;
     private readonly ILogger<UIBtcMapStoreController> _logger;
 
@@ -31,22 +30,17 @@ public class UIBtcMapStoreController : Controller
         IBtcMapService btcMapService,
         INominatimApiClient nominatimApiClient,
         IDirectoryListingChecker directoryListingChecker,
-        BtcMapCapabilityState capabilityState,
         BTCPayNetworkProvider networkProvider,
         ILogger<UIBtcMapStoreController> logger)
     {
         _btcMapService = btcMapService;
         _nominatimApiClient = nominatimApiClient;
         _directoryListingChecker = directoryListingChecker;
-        _capabilityState = capabilityState;
         _networkProvider = networkProvider;
         _logger = logger;
     }
 
     private bool IsMainnet => _networkProvider.NetworkType == ChainName.Mainnet;
-
-    private const string PluginBuilderUnreachableMessage =
-        "Error: BTC Map submissions are temporarily unavailable. Please contact the administrator.";
 
     // BTC-LN is BTCPay's canonical Lightning paymentId; LNURL/BOLT12 reuse it
     // rather than registering distinct top-level IDs, so this gate stays correct
@@ -111,8 +105,7 @@ public class UIBtcMapStoreController : Controller
             StatusMessage = TempData["StatusMessage"]?.ToString(),
             DirectorySubmittedAt = listing?.DirectorySubmittedAt,
             DirectoryPrUrl = listing?.DirectoryPrUrl,
-            EditMode = editMode,
-            PluginBuilderReachable = _capabilityState.PluginBuilderReachable
+            EditMode = editMode
         };
 
         if (listing != null)
@@ -216,8 +209,7 @@ public class UIBtcMapStoreController : Controller
             {
                 Settings = model,
                 SearchResults = merged,
-                IsMainnet = IsMainnet,
-                PluginBuilderReachable = _capabilityState.PluginBuilderReachable
+                IsMainnet = IsMainnet
             });
         }
         catch (Exception ex)
@@ -233,13 +225,7 @@ public class UIBtcMapStoreController : Controller
     public async Task<IActionResult> CreateNew(string storeId, [Bind(Prefix = "Settings")] BtcMapStoreSettings model,
         bool submitToDirectory = false)
     {
-        if (!_capabilityState.PluginBuilderReachable)
-        {
-            TempData["StatusMessage"] = PluginBuilderUnreachableMessage;
-            return RedirectToAction(nameof(Index), new { storeId });
-        }
-
-        if (!ModelState.IsValid)
+if (!ModelState.IsValid)
         {
             TempData["StatusMessage"] = "Error: Please fill in all required fields.";
             return RedirectToAction(nameof(Index), new { storeId });
@@ -280,13 +266,7 @@ public class UIBtcMapStoreController : Controller
     [HttpPost("update")]
     public async Task<IActionResult> UpdateListing(string storeId, [Bind(Prefix = "Settings")] BtcMapStoreSettings model)
     {
-        if (!_capabilityState.PluginBuilderReachable)
-        {
-            TempData["StatusMessage"] = PluginBuilderUnreachableMessage;
-            return RedirectToAction(nameof(Index), new { storeId });
-        }
-
-        if (!ModelState.IsValid)
+if (!ModelState.IsValid)
         {
             TempData["StatusMessage"] = "Error: Invalid settings.";
             return RedirectToAction(nameof(Index), new { storeId });
@@ -334,13 +314,7 @@ public class UIBtcMapStoreController : Controller
     public async Task<IActionResult> DirectorySubmit(string storeId,
         [Bind(Prefix = "Settings")] BtcMapStoreSettings model)
     {
-        if (!_capabilityState.PluginBuilderReachable)
-        {
-            TempData["StatusMessage"] = PluginBuilderUnreachableMessage;
-            return RedirectToAction(nameof(Index), new { storeId });
-        }
-
-        var listing = await _btcMapService.GetListingForStore(storeId);
+var listing = await _btcMapService.GetListingForStore(storeId);
         if (listing == null || listing.Status != ListingStatus.Active)
         {
             TempData["StatusMessage"] = "Error: No active listing found.";

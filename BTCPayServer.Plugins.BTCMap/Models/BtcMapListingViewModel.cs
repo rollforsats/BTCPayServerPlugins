@@ -18,5 +18,4 @@ public class BtcMapListingViewModel
     public string DirectoryMergedType { get; set; }
     public string DirectoryMergedUrl { get; set; }
     public bool EditMode { get; set; }
-    public bool PluginBuilderReachable { get; set; } = true;
 }

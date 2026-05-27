@@ -6,8 +6,7 @@ namespace BTCPayServer.Plugins.BTCMap.Services;
 
 public record PluginBuilderApiScenario(
     Func<BtcMapSubmitRequest, BtcMapSubmitResponse> SubmitSuccess,
-    Func<BtcMapSubmitRequest, PluginBuilderApiException> SubmitFailure,
-    bool PingSucceeds);
+    Func<BtcMapSubmitRequest, PluginBuilderApiException> SubmitFailure);
 
 public static class PluginBuilderApiFixtureScenarios
 {
@@ -25,7 +24,7 @@ public static class PluginBuilderApiFixtureScenarios
         "directory-upstream-failed",
         "rate-limited",
         "validation-error",
-        "unreachable"
+        "transport-error"
     };
 
     public static PluginBuilderApiScenario Get(string name) => name switch
@@ -50,11 +49,10 @@ public static class PluginBuilderApiFixtureScenarios
             "Rate limit reached (3 submissions per 24 hours). Please try again later."),
         "validation-error" => FixedFailure(null, 400,
             "Lat: required; Lon: required"),
-        "unreachable" => new PluginBuilderApiScenario(
+        "transport-error" => new PluginBuilderApiScenario(
             SubmitSuccess: null,
             SubmitFailure: _ => new PluginBuilderApiException(0,
-                "Could not reach the BTC Map service. Please try again later."),
-            PingSucceeds: false),
+                "Could not reach the BTC Map service. Please try again later.")),
         _ => throw new ArgumentException(
             $"Unknown BTCMAP_PLUGINBUILDER_SCENARIO '{name}'. Valid values: {string.Join(", ", Names)}")
     };
@@ -80,8 +78,7 @@ public static class PluginBuilderApiFixtureScenarios
         {
             Directory = req.SubmitToDirectory ? DirectorySuccess() : null
         },
-        SubmitFailure: null,
-        PingSucceeds: true);
+        SubmitFailure: null);
 
     private static PluginBuilderApiScenario DirectoryDuplicateUrl() => new(
         SubmitSuccess: req => new BtcMapSubmitResponse
@@ -90,16 +87,14 @@ public static class PluginBuilderApiFixtureScenarios
                 ? new BtcMapDirectoryResult { Skipped = "duplicate-url:https://example.com" }
                 : null
         },
-        SubmitFailure: null,
-        PingSucceeds: true);
+        SubmitFailure: null);
 
     private static PluginBuilderApiScenario BtcMapOnlySuccess() => new(
         SubmitSuccess: req => new BtcMapSubmitResponse
         {
             BtcMap = req.SubmitToBtcMap ? BtcMapSuccess(req) : null
         },
-        SubmitFailure: null,
-        PingSucceeds: true);
+        SubmitFailure: null);
 
     private static PluginBuilderApiScenario BothLanesSuccess() => new(
         SubmitSuccess: req => new BtcMapSubmitResponse
@@ -107,12 +102,10 @@ public static class PluginBuilderApiFixtureScenarios
             Directory = req.SubmitToDirectory ? DirectorySuccess() : null,
             BtcMap = req.SubmitToBtcMap ? BtcMapSuccess(req) : null
         },
-        SubmitFailure: null,
-        PingSucceeds: true);
+        SubmitFailure: null);
 
     private static PluginBuilderApiScenario FixedFailure(string code, int status, string message) => new(
         SubmitSuccess: null,
         SubmitFailure: _ => new PluginBuilderApiException(status, message,
-            string.IsNullOrEmpty(code) ? null : Guid.NewGuid().ToString("N")),
-        PingSucceeds: true);
+            string.IsNullOrEmpty(code) ? null : Guid.NewGuid().ToString("N")));
 }
