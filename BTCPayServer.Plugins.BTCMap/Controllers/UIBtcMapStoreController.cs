@@ -225,7 +225,7 @@ public class UIBtcMapStoreController : Controller
     public async Task<IActionResult> CreateNew(string storeId, [Bind(Prefix = "Settings")] BtcMapStoreSettings model,
         bool submitToDirectory = false)
     {
-if (!ModelState.IsValid)
+        if (!ModelState.IsValid)
         {
             TempData["StatusMessage"] = "Error: Please fill in all required fields.";
             return RedirectToAction(nameof(Index), new { storeId });
@@ -266,7 +266,7 @@ if (!ModelState.IsValid)
     [HttpPost("update")]
     public async Task<IActionResult> UpdateListing(string storeId, [Bind(Prefix = "Settings")] BtcMapStoreSettings model)
     {
-if (!ModelState.IsValid)
+        if (!ModelState.IsValid)
         {
             TempData["StatusMessage"] = "Error: Invalid settings.";
             return RedirectToAction(nameof(Index), new { storeId });
@@ -314,7 +314,7 @@ if (!ModelState.IsValid)
     public async Task<IActionResult> DirectorySubmit(string storeId,
         [Bind(Prefix = "Settings")] BtcMapStoreSettings model)
     {
-var listing = await _btcMapService.GetListingForStore(storeId);
+        var listing = await _btcMapService.GetListingForStore(storeId);
         if (listing == null || listing.Status != ListingStatus.Active)
         {
             TempData["StatusMessage"] = "Error: No active listing found.";

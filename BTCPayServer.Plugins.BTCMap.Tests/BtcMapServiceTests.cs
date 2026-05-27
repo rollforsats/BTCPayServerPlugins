@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
+using BTCPayServer.Abstractions.Contracts;
 using BTCPayServer.Abstractions.Models;
 using BTCPayServer.Plugins.BTCMap.Data;
 using BTCPayServer.Plugins.BTCMap.Models;
@@ -76,7 +78,7 @@ public class BtcMapServiceTests
     }
 
     [Fact]
-    public async Task SubmitListing_ApiThrows_PersistsErrorStatus_AndRethrows()
+    public async Task SubmitListing_ApiThrowsOnNewRow_RemovesRow_AndRethrows()
     {
         const string storeId = "store-1";
         var factory = TestDbFactory.Create();
@@ -92,8 +94,173 @@ public class BtcMapServiceTests
         Assert.Equal(503, ex.StatusCode);
 
         await using var verify = factory.CreateContext();
+        Assert.False(await verify.Listings.AnyAsync(l => l.StoreId == storeId));
+    }
+
+    [Fact]
+    public async Task SubmitListing_ApiThrowsOnExistingRow_RollsBackFields_AndPersistsErrorStatus()
+    {
+        const string storeId = "store-1";
+        var factory = TestDbFactory.Create();
+        await using (var seed = factory.CreateContext())
+        {
+            seed.Listings.Add(new BtcMapListing
+            {
+                Id = Guid.NewGuid().ToString(),
+                StoreId = storeId,
+                BusinessName = "Old Name",
+                Category = "amenity=cafe",
+                Phone = "+15551112222",
+                Latitude = 32.6838298,
+                Longitude = -117.1839771,
+                Url = "https://old.example.test",
+                CreatedAt = DateTimeOffset.UtcNow,
+                Status = ListingStatus.Active,
+                BtcMapExternalId = "btcpay.example.com:store-1"
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var api = new StubPluginBuilderApiClient
+        {
+            OnSubmit = _ => throw new PluginBuilderApiException(503, "btcmap-not-configured")
+        };
+        var service = BuildService(factory: factory, api: api);
+
+        var settings = NewSettings();
+        settings.BusinessName = "New Name";
+        settings.Phone = "+15553334444";
+        settings.Url = "https://new.example.test";
+
+        await Assert.ThrowsAsync<PluginBuilderApiException>(
+            () => service.SubmitListing(storeId, settings,
+                acceptsLightning: true, acceptsOnchain: false, submitToDirectory: false));
+
+        await using var verify = factory.CreateContext();
         var persisted = await verify.Listings.SingleAsync(l => l.StoreId == storeId);
+        Assert.Equal("Old Name", persisted.BusinessName);
+        Assert.Equal("+15551112222", persisted.Phone);
+        Assert.Equal("https://old.example.test", persisted.Url);
         Assert.Equal(ListingStatus.Error, persisted.Status);
+    }
+
+    [Fact]
+    public async Task UpdateListing_ApiThrows_RollsBackFields_AndPersistsErrorStatus()
+    {
+        const string storeId = "store-1";
+        var factory = TestDbFactory.Create();
+        string listingId;
+        await using (var seed = factory.CreateContext())
+        {
+            var seeded = new BtcMapListing
+            {
+                Id = Guid.NewGuid().ToString(),
+                StoreId = storeId,
+                BusinessName = "Old Name",
+                Category = "amenity=cafe",
+                Phone = "+15551112222",
+                Latitude = 32.6838298,
+                Longitude = -117.1839771,
+                Url = "https://old.example.test",
+                CreatedAt = DateTimeOffset.UtcNow,
+                Status = ListingStatus.Active,
+                BtcMapExternalId = "btcpay.example.com:store-1"
+            };
+            seed.Listings.Add(seeded);
+            await seed.SaveChangesAsync();
+            listingId = seeded.Id;
+        }
+
+        var api = new StubPluginBuilderApiClient
+        {
+            OnSubmit = _ => throw new PluginBuilderApiException(504, "btcmap-upstream-timeout")
+        };
+        var service = BuildService(factory: factory, api: api);
+
+        var stub = new BtcMapListing { Id = listingId, StoreId = storeId };
+        var settings = NewSettings();
+        settings.BusinessName = "New Name";
+        settings.Phone = "+15553334444";
+
+        await Assert.ThrowsAsync<PluginBuilderApiException>(
+            () => service.UpdateListing(stub, settings, acceptsLightning: true, acceptsOnchain: true));
+
+        await using var verify = factory.CreateContext();
+        var persisted = await verify.Listings.SingleAsync(l => l.StoreId == storeId);
+        Assert.Equal("Old Name", persisted.BusinessName);
+        Assert.Equal("+15551112222", persisted.Phone);
+        Assert.Equal(ListingStatus.Error, persisted.Status);
+    }
+
+    [Fact]
+    public async Task UpdateListing_EditModeOmittingDirectoryFields_PreservesPublishedMetadata()
+    {
+        const string storeId = "store-1";
+        var factory = TestDbFactory.Create();
+        string listingId;
+        await using (var seed = factory.CreateContext())
+        {
+            var seeded = new BtcMapListing
+            {
+                Id = Guid.NewGuid().ToString(),
+                StoreId = storeId,
+                BusinessName = "Bitcoin Cafe",
+                Category = "amenity=cafe",
+                Phone = "+15551112222",
+                Latitude = 32.6838298,
+                Longitude = -117.1839771,
+                Url = "https://example.test",
+                CreatedAt = DateTimeOffset.UtcNow,
+                Status = ListingStatus.Active,
+                BtcMapExternalId = "btcpay.example.com:store-1",
+                Description = "Cozy waterfront coffee shop.",
+                Twitter = "@bitcoincafe",
+                Github = "https://github.com/bitcoincafe",
+                OnionUrl = "http://bitcoincafe.onion",
+                DirectoryType = "merchants",
+                DirectorySubType = "food",
+                DirectorySubmittedAt = DateTimeOffset.UtcNow.AddDays(-1),
+                DirectoryPrUrl = "https://github.com/btcpayserver/directory/pull/123"
+            };
+            seed.Listings.Add(seeded);
+            await seed.SaveChangesAsync();
+            listingId = seeded.Id;
+        }
+
+        BtcMapSubmitRequest captured = null;
+        var api = new StubPluginBuilderApiClient
+        {
+            OnSubmit = req => { captured = req; return Task.FromResult(new BtcMapSubmitResponse()); }
+        };
+        var service = BuildService(factory: factory, api: api);
+
+        var stub = new BtcMapListing { Id = listingId, StoreId = storeId };
+        var editOnlyPhone = NewSettings();
+        editOnlyPhone.Phone = "+15559998888";
+        editOnlyPhone.DirectoryDescription = null;
+        editOnlyPhone.DirectoryTwitter = null;
+        editOnlyPhone.DirectoryGithub = null;
+        editOnlyPhone.DirectoryOnionUrl = null;
+        editOnlyPhone.DirectoryType = null;
+        editOnlyPhone.DirectorySubType = null;
+
+        await service.UpdateListing(stub, editOnlyPhone, acceptsLightning: true, acceptsOnchain: true);
+
+        Assert.NotNull(captured);
+        Assert.Equal("Cozy waterfront coffee shop.", captured.Description);
+        Assert.Equal("@bitcoincafe", captured.Twitter);
+        Assert.Equal("https://github.com/bitcoincafe", captured.Github);
+        Assert.Equal("http://bitcoincafe.onion", captured.OnionUrl);
+        Assert.Equal("merchants", captured.Type);
+        Assert.Equal("food", captured.SubType);
+
+        await using var verify = factory.CreateContext();
+        var persisted = await verify.Listings.SingleAsync(l => l.StoreId == storeId);
+        Assert.Equal("+15559998888", persisted.Phone);
+        Assert.Equal("Cozy waterfront coffee shop.", persisted.Description);
+        Assert.Equal("@bitcoincafe", persisted.Twitter);
+        Assert.Equal("merchants", persisted.DirectoryType);
+        Assert.Equal("food", persisted.DirectorySubType);
     }
 
     [Fact]
@@ -133,25 +300,6 @@ public class BtcMapServiceTests
     }
 
     [Fact]
-    public async Task SubmitListing_HostLowercased_AndPortStripped()
-    {
-        const string storeId = "store-1";
-        var factory = TestDbFactory.Create();
-        var api = new StubPluginBuilderApiClient
-        {
-            OnSubmit = req => Task.FromResult(new BtcMapSubmitResponse
-            {
-                BtcMap = new BtcMapBtcMapResult { Id = 1, ExternalId = req.ExternalId }
-            })
-        };
-        var service = BuildService(factory: factory, api: api, host: "BTCPay.Example.COM:443");
-
-        var listing = await service.SubmitListing(storeId, NewSettings(),
-            acceptsLightning: false, acceptsOnchain: false, submitToDirectory: false);
-        Assert.Equal("btcpay.example.com:store-1", listing.BtcMapExternalId);
-    }
-
-    [Fact]
     public async Task SubmitListing_GlobalCountry_OmittedFromBtcMapRequest()
     {
         const string storeId = "store-1";
@@ -172,6 +320,72 @@ public class BtcMapServiceTests
         Assert.Null(captured.Country);
     }
 
+    [Fact]
+    public async Task SubmitListing_AcceptsLightningFalse_SerializedAsExplicitFalse()
+    {
+        const string storeId = "store-1";
+        var factory = TestDbFactory.Create();
+        BtcMapSubmitRequest captured = null;
+        var api = new StubPluginBuilderApiClient
+        {
+            OnSubmit = req => { captured = req; return Task.FromResult(new BtcMapSubmitResponse()); }
+        };
+        var service = BuildService(factory: factory, api: api);
+
+        await service.SubmitListing(storeId, NewSettings(),
+            acceptsLightning: false, acceptsOnchain: false, submitToDirectory: false);
+
+        Assert.NotNull(captured);
+        Assert.True(captured.AcceptsLightning.HasValue);
+        Assert.False(captured.AcceptsLightning.Value);
+        Assert.True(captured.AcceptsOnchain.HasValue);
+        Assert.False(captured.AcceptsOnchain.Value);
+    }
+
+    [Fact]
+    public async Task SubmitListing_UsesServerSettingsBaseUrlHost_WhenConfigured()
+    {
+        const string storeId = "store-1";
+        var factory = TestDbFactory.Create();
+        var api = new StubPluginBuilderApiClient
+        {
+            OnSubmit = req => Task.FromResult(new BtcMapSubmitResponse
+            {
+                BtcMap = new BtcMapBtcMapResult { Id = 1, ExternalId = req.ExternalId }
+            })
+        };
+        var settingsRepo = new StubSettingsRepository();
+        settingsRepo.Set("BTCPayServer.Services.ServerSettings",
+            new { BaseUrl = "https://shop.example.com:8443/" });
+        var service = BuildService(factory: factory, api: api,
+            host: "internal.proxy.local", settingsRepository: settingsRepo);
+
+        var listing = await service.SubmitListing(storeId, NewSettings(),
+            acceptsLightning: false, acceptsOnchain: false, submitToDirectory: false);
+
+        Assert.Equal("shop.example.com:store-1", listing.BtcMapExternalId);
+    }
+
+    [Fact]
+    public async Task SubmitListing_FallsBackToRequestHost_WhenBaseUrlMissing()
+    {
+        const string storeId = "store-1";
+        var factory = TestDbFactory.Create();
+        var api = new StubPluginBuilderApiClient
+        {
+            OnSubmit = req => Task.FromResult(new BtcMapSubmitResponse
+            {
+                BtcMap = new BtcMapBtcMapResult { Id = 1, ExternalId = req.ExternalId }
+            })
+        };
+        var service = BuildService(factory: factory, api: api, host: "fallback.example.com");
+
+        var listing = await service.SubmitListing(storeId, NewSettings(),
+            acceptsLightning: false, acceptsOnchain: false, submitToDirectory: false);
+
+        Assert.Equal("fallback.example.com:store-1", listing.BtcMapExternalId);
+    }
+
     private static BtcMapStoreSettings NewSettings() => new()
     {
         BusinessName = "Bitcoin Cafe",
@@ -186,7 +400,8 @@ public class BtcMapServiceTests
         BtcMapDbContextFactory factory = null,
         IListingRepository repo = null,
         IPluginBuilderApiClient api = null,
-        string host = "btcpay.example.com")
+        string host = "btcpay.example.com",
+        ISettingsRepository settingsRepository = null)
     {
         var http = new DefaultHttpContext();
         http.Request.Host = new HostString(host);
@@ -198,6 +413,7 @@ public class BtcMapServiceTests
             apiClient: api ?? new StubPluginBuilderApiClient(),
             overpassApiClient: new StubOverpassApiClient(),
             httpContextAccessor: accessor,
+            settingsRepository: settingsRepository ?? new StubSettingsRepository(),
             logger: new NullLogger<BtcMapService>());
     }
 
@@ -234,6 +450,29 @@ public class BtcMapServiceTests
 
         public Task<List<OverpassElement>> CheckExistingBitcoinTags(double lat, double lon)
             => Task.FromResult(new List<OverpassElement>());
+    }
+
+    private class StubSettingsRepository : ISettingsRepository
+    {
+        private readonly Dictionary<string, string> _byName = new();
+
+        public void Set(string name, object value)
+        {
+            _byName[name] = System.Text.Json.JsonSerializer.Serialize(value);
+        }
+
+        public Task<T> GetSettingAsync<T>(string name = null) where T : class
+        {
+            if (name != null && _byName.TryGetValue(name, out var json))
+                return Task.FromResult(System.Text.Json.JsonSerializer.Deserialize<T>(json,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }));
+            return Task.FromResult<T>(null);
+        }
+
+        public Task UpdateSetting<T>(T obj, string name = null) where T : class => Task.CompletedTask;
+
+        public Task<T> WaitSettingsChanged<T>(CancellationToken cancellationToken = default) where T : class
+            => throw new NotImplementedException();
     }
 }
 

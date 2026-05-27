@@ -78,6 +78,14 @@ public class PluginBuilderApiClientTests
         Assert.Equal("host:store", response.BtcMap.ExternalId);
     }
 
+    [Fact]
+    public async Task Malformed_2xx_body_throws_typed_exception_with_status_zero()
+    {
+        var ex = await SubmitAndExpectAsync(HttpStatusCode.OK, "{not-json");
+        Assert.Equal(0, ex.StatusCode);
+        Assert.Contains("unexpected response", ex.Message);
+    }
+
     private static async Task<PluginBuilderApiException> SubmitAndExpectAsync(HttpStatusCode status, string body)
     {
         var client = BuildClient(status, body);

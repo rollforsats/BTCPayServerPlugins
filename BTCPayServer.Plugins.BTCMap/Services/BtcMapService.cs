@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using BTCPayServer.Abstractions.Contracts;
 using BTCPayServer.Plugins.BTCMap.Data;
 using BTCPayServer.Plugins.BTCMap.Models;
 using Microsoft.AspNetCore.Http;
@@ -16,7 +17,12 @@ public class BtcMapService : IBtcMapService
     private readonly IPluginBuilderApiClient _apiClient;
     private readonly IOverpassApiClient _overpassApiClient;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly ISettingsRepository _settingsRepository;
     private readonly ILogger<BtcMapService> _logger;
+
+    // Settings key BTCPay uses for its server-wide configuration; matches
+    // SettingsRepository.KeyNameByType(typeof(BTCPayServer.Services.ServerSettings)).
+    private const string ServerSettingsKey = "BTCPayServer.Services.ServerSettings";
 
     public BtcMapService(
         BtcMapDbContextFactory dbContextFactory,
@@ -24,6 +30,7 @@ public class BtcMapService : IBtcMapService
         IPluginBuilderApiClient apiClient,
         IOverpassApiClient overpassApiClient,
         IHttpContextAccessor httpContextAccessor,
+        ISettingsRepository settingsRepository,
         ILogger<BtcMapService> logger)
     {
         _dbContextFactory = dbContextFactory;
@@ -31,6 +38,7 @@ public class BtcMapService : IBtcMapService
         _apiClient = apiClient;
         _overpassApiClient = overpassApiClient;
         _httpContextAccessor = httpContextAccessor;
+        _settingsRepository = settingsRepository;
         _logger = logger;
     }
 
@@ -63,8 +71,10 @@ public class BtcMapService : IBtcMapService
         await using var ctx = _dbContextFactory.CreateContext();
         var existing = await ctx.Listings.FirstOrDefaultAsync(l => l.StoreId == storeId);
 
-        var externalId = existing?.BtcMapExternalId ?? ComposeExternalId(storeId);
+        var externalId = existing?.BtcMapExternalId ?? await ComposeExternalIdAsync(storeId);
         var now = DateTimeOffset.UtcNow;
+
+        ListingSnapshot? snapshot = existing != null ? ListingSnapshot.Capture(existing) : null;
 
         var listing = existing ?? new BtcMapListing
         {
@@ -99,7 +109,7 @@ public class BtcMapService : IBtcMapService
         if (existing == null)
             ctx.Listings.Add(listing);
 
-        var request = ToSubmitRequest(settings, externalId, acceptsLightning, acceptsOnchain, submitToDirectory);
+        var request = ToSubmitRequest(settings, externalId, acceptsLightning, acceptsOnchain, submitToDirectory, listing);
 
         try
         {
@@ -112,7 +122,15 @@ public class BtcMapService : IBtcMapService
         }
         catch (PluginBuilderApiException)
         {
-            listing.Status = ListingStatus.Error;
+            if (existing != null)
+            {
+                snapshot.Value.RestoreInto(existing);
+                existing.Status = ListingStatus.Error;
+            }
+            else
+            {
+                ctx.Listings.Remove(listing);
+            }
             try
             {
                 await ctx.SaveChangesAsync();
@@ -133,7 +151,19 @@ public class BtcMapService : IBtcMapService
         await using var ctx = _dbContextFactory.CreateContext();
         var dbListing = await ctx.Listings.FirstAsync(l => l.Id == listing.Id);
 
-        var externalId = dbListing.BtcMapExternalId ?? ComposeExternalId(dbListing.StoreId);
+        var snapshot = ListingSnapshot.Capture(dbListing);
+        var externalId = dbListing.BtcMapExternalId ?? await ComposeExternalIdAsync(dbListing.StoreId);
+
+        // Edit view doesn't render directory inputs, so settings.Directory* bind to
+        // null on edit POST. Fall back to the stored row so a phone-only edit doesn't
+        // wipe previously-published directory metadata.
+        var preservedDescription = settings.DirectoryDescription ?? dbListing.Description;
+        var preservedTwitter = settings.DirectoryTwitter ?? dbListing.Twitter;
+        var preservedGithub = settings.DirectoryGithub ?? dbListing.Github;
+        var preservedOnionUrl = settings.DirectoryOnionUrl ?? dbListing.OnionUrl;
+        var preservedDirectoryType = settings.DirectoryType ?? dbListing.DirectoryType;
+        var preservedDirectorySubType = settings.DirectorySubType ?? dbListing.DirectorySubType;
+
         dbListing.BusinessName = settings.BusinessName;
         dbListing.Category = settings.Category;
         dbListing.Latitude = settings.Latitude.Value;
@@ -149,9 +179,15 @@ public class BtcMapService : IBtcMapService
         dbListing.AcceptsOnchain = acceptsOnchain;
         dbListing.Url = settings.Url;
         dbListing.BtcMapExternalId = externalId;
+        dbListing.Description = preservedDescription;
+        dbListing.Twitter = preservedTwitter;
+        dbListing.Github = preservedGithub;
+        dbListing.OnionUrl = preservedOnionUrl;
+        dbListing.DirectoryType = preservedDirectoryType;
+        dbListing.DirectorySubType = preservedDirectorySubType;
 
         var submitToDirectory = dbListing.DirectorySubmittedAt != null;
-        var request = ToSubmitRequest(settings, externalId, acceptsLightning, acceptsOnchain, submitToDirectory);
+        var request = ToSubmitRequest(settings, externalId, acceptsLightning, acceptsOnchain, submitToDirectory, dbListing);
 
         try
         {
@@ -163,6 +199,7 @@ public class BtcMapService : IBtcMapService
         }
         catch (PluginBuilderApiException)
         {
+            snapshot.RestoreInto(dbListing);
             dbListing.Status = ListingStatus.Error;
             try { await ctx.SaveChangesAsync(); } catch (Exception saveEx)
             {
@@ -219,21 +256,27 @@ public class BtcMapService : IBtcMapService
     }
 
     private BtcMapSubmitRequest ToSubmitRequest(BtcMapStoreSettings settings, string externalId,
-        bool acceptsLightning, bool acceptsOnchain, bool submitToDirectory)
+        bool acceptsLightning, bool acceptsOnchain, bool submitToDirectory, BtcMapListing fallback)
     {
         var country = NormalizeCountryForBtcMap(settings.Country);
         var directoryCountry = !string.IsNullOrEmpty(settings.Country) ? settings.Country : null;
+        var description = settings.DirectoryDescription ?? fallback?.Description;
+        var directoryType = settings.DirectoryType ?? fallback?.DirectoryType;
+        var directorySubType = settings.DirectorySubType ?? fallback?.DirectorySubType;
+        var twitter = settings.DirectoryTwitter ?? fallback?.Twitter;
+        var github = settings.DirectoryGithub ?? fallback?.Github;
+        var onionUrl = settings.DirectoryOnionUrl ?? fallback?.OnionUrl;
         return new BtcMapSubmitRequest
         {
             Name = settings.BusinessName,
             Url = settings.Url,
-            Description = submitToDirectory ? settings.DirectoryDescription : null,
-            Type = submitToDirectory ? settings.DirectoryType : null,
-            SubType = submitToDirectory ? settings.DirectorySubType : null,
+            Description = submitToDirectory ? description : null,
+            Type = submitToDirectory ? directoryType : null,
+            SubType = submitToDirectory ? directorySubType : null,
             Country = submitToDirectory ? directoryCountry : country,
-            Twitter = submitToDirectory ? settings.DirectoryTwitter : null,
-            Github = submitToDirectory ? settings.DirectoryGithub : null,
-            OnionUrl = submitToDirectory ? settings.DirectoryOnionUrl : null,
+            Twitter = submitToDirectory ? twitter : null,
+            Github = submitToDirectory ? github : null,
+            OnionUrl = submitToDirectory ? onionUrl : null,
             Phone = settings.Phone,
             Email = settings.Email,
             Lat = settings.Latitude,
@@ -244,8 +287,8 @@ public class BtcMapService : IBtcMapService
             Street = settings.Street,
             City = settings.City,
             Postcode = settings.PostCode,
-            AcceptsLightning = acceptsLightning ? true : null,
-            AcceptsOnchain = acceptsOnchain ? true : null,
+            AcceptsLightning = acceptsLightning,
+            AcceptsOnchain = acceptsOnchain,
             SubmitToDirectory = submitToDirectory,
             SubmitToBtcMap = true
         };
@@ -269,13 +312,116 @@ public class BtcMapService : IBtcMapService
         return picked.ToLowerInvariant();
     }
 
-    private string ComposeExternalId(string storeId, string host = null)
+    private async Task<string> ComposeExternalIdAsync(string storeId, string hostOverride = null)
     {
-        var resolved = host ?? _httpContextAccessor.HttpContext?.Request?.Host.Host;
+        var resolved = hostOverride ?? await ResolveCanonicalHostAsync();
         if (string.IsNullOrEmpty(resolved))
             throw new InvalidOperationException(
                 "Cannot compose ExternalId: no host available. Caller must supply a host when running outside an HTTP request context.");
         return $"{resolved.ToLowerInvariant()}:{storeId}";
+    }
+
+    // Prefer BTCPay's admin-configured BaseUrl so the ExternalId namespace is stable
+    // across alternate hostnames / reverse-proxy paths. Fall back to Request.Host
+    // when no BaseUrl is set (fresh installs).
+    private async Task<string> ResolveCanonicalHostAsync()
+    {
+        try
+        {
+            var settings = await _settingsRepository.GetSettingAsync<BtcPayServerSettingsView>(ServerSettingsKey);
+            if (!string.IsNullOrEmpty(settings?.BaseUrl)
+                && Uri.TryCreate(settings.BaseUrl, UriKind.Absolute, out var uri)
+                && !string.IsNullOrEmpty(uri.Host))
+                return uri.Host;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to read BTCPay ServerSettings.BaseUrl; falling back to Request.Host for ExternalId composition.");
+        }
+        return _httpContextAccessor.HttpContext?.Request?.Host.Host;
+    }
+
+    // Local projection of BTCPayServer.Services.ServerSettings — only BaseUrl matters
+    // to us, and a shape-matching DTO avoids taking a project reference on BTCPay core.
+    private sealed class BtcPayServerSettingsView
+    {
+        public string BaseUrl { get; set; }
+    }
+
+    private readonly struct ListingSnapshot
+    {
+        public string BusinessName { get; init; }
+        public string Category { get; init; }
+        public double Latitude { get; init; }
+        public double Longitude { get; init; }
+        public string HouseNumber { get; init; }
+        public string Street { get; init; }
+        public string City { get; init; }
+        public string PostCode { get; init; }
+        public string Country { get; init; }
+        public string Phone { get; init; }
+        public string Email { get; init; }
+        public bool AcceptsLightning { get; init; }
+        public bool AcceptsOnchain { get; init; }
+        public string Url { get; init; }
+        public string Description { get; init; }
+        public string Twitter { get; init; }
+        public string Github { get; init; }
+        public string OnionUrl { get; init; }
+        public string DirectoryType { get; init; }
+        public string DirectorySubType { get; init; }
+        public ListingStatus Status { get; init; }
+
+        public static ListingSnapshot Capture(BtcMapListing l) => new()
+        {
+            BusinessName = l.BusinessName,
+            Category = l.Category,
+            Latitude = l.Latitude,
+            Longitude = l.Longitude,
+            HouseNumber = l.HouseNumber,
+            Street = l.Street,
+            City = l.City,
+            PostCode = l.PostCode,
+            Country = l.Country,
+            Phone = l.Phone,
+            Email = l.Email,
+            AcceptsLightning = l.AcceptsLightning,
+            AcceptsOnchain = l.AcceptsOnchain,
+            Url = l.Url,
+            Description = l.Description,
+            Twitter = l.Twitter,
+            Github = l.Github,
+            OnionUrl = l.OnionUrl,
+            DirectoryType = l.DirectoryType,
+            DirectorySubType = l.DirectorySubType,
+            Status = l.Status
+        };
+
+        public void RestoreInto(BtcMapListing l)
+        {
+            l.BusinessName = BusinessName;
+            l.Category = Category;
+            l.Latitude = Latitude;
+            l.Longitude = Longitude;
+            l.HouseNumber = HouseNumber;
+            l.Street = Street;
+            l.City = City;
+            l.PostCode = PostCode;
+            l.Country = Country;
+            l.Phone = Phone;
+            l.Email = Email;
+            l.AcceptsLightning = AcceptsLightning;
+            l.AcceptsOnchain = AcceptsOnchain;
+            l.Url = Url;
+            l.Description = Description;
+            l.Twitter = Twitter;
+            l.Github = Github;
+            l.OnionUrl = OnionUrl;
+            l.DirectoryType = DirectoryType;
+            l.DirectorySubType = DirectorySubType;
+            l.Status = Status;
+        }
     }
 
     private void ApplyBtcMapResponse(BtcMapListing listing, BtcMapSubmitResponse response, bool isFirstSubmission)

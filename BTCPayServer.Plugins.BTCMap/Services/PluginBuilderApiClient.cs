@@ -46,6 +46,7 @@ public class PluginBuilderApiClient : IPluginBuilderApiClient
     public async Task<BtcMapSubmitResponse> SubmitAsync(BtcMapSubmitRequest request)
     {
         using var scope = _services.CreateScope();
+        // Share the host's PluginBuilderClient so admin-configured PoliciesSettings.PluginSource is honored.
         var httpClient = scope.ServiceProvider
             .GetRequiredService<BTCPayServer.Plugins.PluginBuilderClient>().HttpClient;
 
@@ -109,8 +110,17 @@ public class PluginBuilderApiClient : IPluginBuilderApiClient
                     "An unexpected error occurred. Please try again later.");
             }
 
-            return JsonSerializer.Deserialize<BtcMapSubmitResponse>(body, JsonOptions)
-                   ?? new BtcMapSubmitResponse();
+            try
+            {
+                return JsonSerializer.Deserialize<BtcMapSubmitResponse>(body, JsonOptions)
+                       ?? new BtcMapSubmitResponse();
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "BTC Map API returned malformed JSON: {Body}", body);
+                throw new PluginBuilderApiException(0,
+                    "Received an unexpected response from the BTC Map service. Please try again later.");
+            }
         }
     }
 
