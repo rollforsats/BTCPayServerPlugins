@@ -79,6 +79,12 @@ public class UIBtcMapStoreController : Controller
     private const string PhoneFormatErrorMessage =
         "Error: Phone must start with a country code (e.g. +44 20 8452 7891), or set the address Country so we can add it automatically.";
 
+    internal static bool CountryIsGlobal(string country)
+        => !string.IsNullOrEmpty(country) && string.Equals(country.Trim(), "GLOBAL", StringComparison.OrdinalIgnoreCase);
+
+    private const string GlobalCountryErrorMessage =
+        "Error: BTC Map listings are physical locations, so Country must be a specific country (not GLOBAL). Set the store address Country to where the business is located.";
+
     private static string BuildSubmissionStatusMessage(BtcMapListing listing, bool submitToDirectory)
     {
         if (submitToDirectory && listing.DirectorySubmittedAt.HasValue)
@@ -233,6 +239,13 @@ public class UIBtcMapStoreController : Controller
             return View("Index", vm);
         }
 
+        if (CountryIsGlobal(model.Country))
+        {
+            var vm = await BuildViewModel(storeId, model);
+            vm.StatusMessage = GlobalCountryErrorMessage;
+            return View("Index", vm);
+        }
+
         NormalizeUrls(model);
 
         try
@@ -271,6 +284,13 @@ public class UIBtcMapStoreController : Controller
         {
             var vm = await BuildViewModel(storeId, model, editMode: true);
             vm.StatusMessage = PhoneFormatErrorMessage;
+            return View("Index", vm);
+        }
+
+        if (CountryIsGlobal(model.Country))
+        {
+            var vm = await BuildViewModel(storeId, model, editMode: true);
+            vm.StatusMessage = GlobalCountryErrorMessage;
             return View("Index", vm);
         }
 

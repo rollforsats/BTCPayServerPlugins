@@ -17,4 +17,18 @@ public class UIBtcMapStoreControllerTests
     {
         Assert.Equal(expected, UIBtcMapStoreController.PhoneIsWellFormed(input));
     }
+
+    [Theory]
+    [InlineData("GLOBAL", true)]
+    [InlineData("global", true)]
+    [InlineData("Global", true)]
+    [InlineData(" GLOBAL ", true)]
+    [InlineData("GB", false)]
+    [InlineData("US", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void CountryIsGlobal_DetectsCaseInsensitiveAndTrimmed(string input, bool expected)
+    {
+        Assert.Equal(expected, UIBtcMapStoreController.CountryIsGlobal(input));
+    }
 }
