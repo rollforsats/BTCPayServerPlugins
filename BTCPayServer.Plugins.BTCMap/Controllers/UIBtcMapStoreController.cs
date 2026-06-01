@@ -12,7 +12,6 @@ using BTCPayServer.Plugins.BTCMap.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
-using NBitcoin;
 
 namespace BTCPayServer.Plugins.BTCMap.Controllers;
 
@@ -23,24 +22,19 @@ public class UIBtcMapStoreController : Controller
     private readonly IBtcMapService _btcMapService;
     private readonly INominatimApiClient _nominatimApiClient;
     private readonly IDirectoryListingChecker _directoryListingChecker;
-    private readonly BTCPayNetworkProvider _networkProvider;
     private readonly ILogger<UIBtcMapStoreController> _logger;
 
     public UIBtcMapStoreController(
         IBtcMapService btcMapService,
         INominatimApiClient nominatimApiClient,
         IDirectoryListingChecker directoryListingChecker,
-        BTCPayNetworkProvider networkProvider,
         ILogger<UIBtcMapStoreController> logger)
     {
         _btcMapService = btcMapService;
         _nominatimApiClient = nominatimApiClient;
         _directoryListingChecker = directoryListingChecker;
-        _networkProvider = networkProvider;
         _logger = logger;
     }
-
-    private bool IsMainnet => _networkProvider.NetworkType == ChainName.Mainnet;
 
     // Canonical PaymentMethodId strings are "<crypto>-<type>": BTC on-chain is "BTC-CHAIN",
     // Lightning is "BTC-LN" (LNURL/BOLT12 reuse the LN id rather than registering distinct
@@ -101,7 +95,6 @@ public class UIBtcMapStoreController : Controller
 
         var vm = new BtcMapListingViewModel
         {
-            IsMainnet = IsMainnet,
             ExistingListing = listing,
             StatusMessage = TempData["StatusMessage"]?.ToString(),
             DirectorySubmittedAt = listing?.DirectorySubmittedAt,
@@ -209,8 +202,7 @@ public class UIBtcMapStoreController : Controller
             return View("SearchResults", new BtcMapListingViewModel
             {
                 Settings = model,
-                SearchResults = merged,
-                IsMainnet = IsMainnet
+                SearchResults = merged
             });
         }
         catch (Exception ex)

@@ -8,7 +8,6 @@ public class BtcMapListingViewModel
 {
     public BtcMapStoreSettings Settings { get; set; } = new();
     public BtcMapListing ExistingListing { get; set; }
-    public bool IsMainnet { get; set; }
     public List<OverpassElement> SearchResults { get; set; }
     public string StatusMessage { get; set; }
     public string Address { get; set; }
