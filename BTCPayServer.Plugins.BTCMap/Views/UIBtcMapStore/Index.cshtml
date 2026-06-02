@@ -66,18 +66,12 @@
                 {
                     <dt class="col-sm-3">Submitted on</dt><dd class="col-sm-9">@Model.ExistingListing.BtcMapSubmittedAt.Value.ToString("yyyy-MM-dd")</dd>
                 }
-                @if (Model.ExistingListing.BtcMapLastEditedAt.HasValue)
-                {
-                    <dt class="col-sm-3">Last edited on</dt><dd class="col-sm-9">@Model.ExistingListing.BtcMapLastEditedAt.Value.ToString("yyyy-MM-dd")</dd>
-                }
             </dl>
 
             <p class="text-muted small">
                 BTC Map moderators review submissions before publishing them to the map.
                 <a href="https://gitea.btcmap.org/teambtcmap/btcmap-general/wiki/Pending-Places" target="_blank" rel="noopener noreferrer">Learn how submissions are reviewed</a>.
             </p>
-
-            <a asp-action="Edit" asp-route-storeId="@storeId" class="btn btn-outline-primary">Edit</a>
 
             <h4 class="mt-5 mb-3">BTCPay Directory</h4>
             @if (!string.IsNullOrEmpty(Model.DirectoryMergedName))
