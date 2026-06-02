@@ -15,14 +15,10 @@ public interface IBtcMapService
     Task<List<OverpassElement>> CheckDuplicates(double lat, double lon);
 
     Task<BtcMapListing> SubmitListing(string storeId, BtcMapStoreSettings settings,
-        bool acceptsLightning, bool submitToDirectory,
-        string osmType = null, long? osmId = null);
+        bool acceptsLightning, bool acceptsOnchain, bool submitToDirectory);
 
-    Task UpdateListing(BtcMapListing listing, BtcMapStoreSettings settings, bool acceptsLightning);
-
-    Task UnlistStore(string storeId);
-
-    Task ReverifyListing(BtcMapListing listing, bool acceptsLightning);
+    Task UpdateListing(BtcMapListing listing, BtcMapStoreSettings settings,
+        bool acceptsLightning, bool acceptsOnchain);
 
     Task<BtcMapSubmitResponse> SubmitToDirectoryOnly(BtcMapListing listing, BtcMapStoreSettings settings);
 }

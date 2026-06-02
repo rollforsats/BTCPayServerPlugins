@@ -16,9 +16,11 @@ namespace BTCPayServer.Plugins.BTCMap.Services;
 public class PluginBuilderApiException : Exception
 {
     public int StatusCode { get; }
-    public PluginBuilderApiException(int statusCode, string message) : base(message)
+    public string CorrelationId { get; }
+    public PluginBuilderApiException(int statusCode, string message, string correlationId = null) : base(message)
     {
         StatusCode = statusCode;
+        CorrelationId = correlationId;
     }
 }
 
@@ -33,11 +35,6 @@ public class PluginBuilderApiClient : IPluginBuilderApiClient
     private readonly IServiceProvider _services;
     private readonly ILogger<PluginBuilderApiClient> _logger;
 
-    // Resolve PluginBuilderClient per call rather than capturing its HttpClient in the
-    // constructor. PluginBuilderClient is registered via AddHttpClient<T> and reads
-    // PoliciesSettings.PluginSource per resolution; a captured HttpClient pins the
-    // BaseAddress to whatever PluginSource was at first resolution and defeats the
-    // factory's HttpMessageHandler rotation.
     public PluginBuilderApiClient(
         IServiceProvider services,
         ILogger<PluginBuilderApiClient> logger)
@@ -49,6 +46,7 @@ public class PluginBuilderApiClient : IPluginBuilderApiClient
     public async Task<BtcMapSubmitResponse> SubmitAsync(BtcMapSubmitRequest request)
     {
         using var scope = _services.CreateScope();
+        // Share the host's PluginBuilderClient so admin-configured PoliciesSettings.PluginSource is honored.
         var httpClient = scope.ServiceProvider
             .GetRequiredService<BTCPayServer.Plugins.PluginBuilderClient>().HttpClient;
 
@@ -69,10 +67,11 @@ public class PluginBuilderApiClient : IPluginBuilderApiClient
         using (response)
         {
             var body = await response.Content.ReadAsStringAsync();
+            var statusCode = (int)response.StatusCode;
 
             if (response.StatusCode == HttpStatusCode.TooManyRequests)
                 throw new PluginBuilderApiException(429,
-                    "Rate limit reached (5 submissions per 24 hours). Please try again later.");
+                    "Rate limit reached (3 submissions per 24 hours). Please try again later.");
 
             if (response.StatusCode == HttpStatusCode.BadRequest)
             {
@@ -93,30 +92,67 @@ public class PluginBuilderApiClient : IPluginBuilderApiClient
                 throw new PluginBuilderApiException(400, message);
             }
 
-            if (response.StatusCode == HttpStatusCode.BadGateway)
+            if (statusCode >= 500 && statusCode < 600)
             {
-                _logger.LogError("BTC Map API upstream failure: {Body}", body);
-                throw new PluginBuilderApiException(502,
-                    "The BTC Map service encountered an upstream error. Please try again later.");
+                var outcome = TryParseOutcome(body);
+                _logger.LogError(
+                    "BTC Map API outcome failure {Status} code={Code} correlationId={CorrelationId} body={Body}",
+                    statusCode, outcome.error, outcome.correlationId, body);
+                var message = MapOutcomeToMessage(outcome.error, statusCode);
+                throw new PluginBuilderApiException(statusCode, message, outcome.correlationId);
             }
-
-            // 409 "already-unlisted" is treated as success — the merchant is unlisted either way
-            if (response.StatusCode == HttpStatusCode.Conflict)
-                return JsonSerializer.Deserialize<BtcMapSubmitResponse>(body, JsonOptions)
-                       ?? new BtcMapSubmitResponse();
 
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogError("BTC Map API unexpected status {Status}: {Body}",
-                    (int)response.StatusCode, body);
-                throw new PluginBuilderApiException((int)response.StatusCode,
+                    statusCode, body);
+                throw new PluginBuilderApiException(statusCode,
                     "An unexpected error occurred. Please try again later.");
             }
 
-            return JsonSerializer.Deserialize<BtcMapSubmitResponse>(body, JsonOptions)
-                   ?? new BtcMapSubmitResponse();
+            try
+            {
+                return JsonSerializer.Deserialize<BtcMapSubmitResponse>(body, JsonOptions)
+                       ?? new BtcMapSubmitResponse();
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "BTC Map API returned malformed JSON: {Body}", body);
+                throw new PluginBuilderApiException(0,
+                    "Received an unexpected response from the BTC Map service. Please try again later.");
+            }
         }
     }
+
+    private static (string error, string correlationId) TryParseOutcome(string body)
+    {
+        try
+        {
+            var outcome = JsonSerializer.Deserialize<OutcomeErrorResponse>(body, JsonOptions);
+            return (outcome?.Error, outcome?.CorrelationId);
+        }
+        catch
+        {
+            return (null, null);
+        }
+    }
+
+    private static string MapOutcomeToMessage(string code, int statusCode) => code switch
+    {
+        "btcmap-not-configured" => "BTC Map is not yet available on this BTCPay instance. Please contact the administrator.",
+        "btcmap-upstream-timeout" => "The BTC Map service timed out. Please try again in a few minutes.",
+        "btcmap-upstream-failed" => "BTC Map encountered an upstream error. Please try again later.",
+        "directory-not-configured" => "BTCPay Directory submissions are temporarily unavailable. Please try again later.",
+        "directory-upstream-timeout" => "BTCPay Directory submissions timed out. Please try again.",
+        "directory-upstream-failed" => "BTCPay Directory encountered an upstream error. Please try again later.",
+        _ => statusCode switch
+        {
+            503 => "The BTC Map service is temporarily unavailable. Please try again later.",
+            504 => "The BTC Map service timed out. Please try again in a few minutes.",
+            502 => "The BTC Map service encountered an upstream error. Please try again later.",
+            _ => "An unexpected error occurred. Please try again later."
+        }
+    };
 
     private class ValidationErrorResponse
     {
@@ -127,5 +163,11 @@ public class PluginBuilderApiClient : IPluginBuilderApiClient
     {
         public string Path { get; set; }
         public string Message { get; set; }
+    }
+
+    private class OutcomeErrorResponse
+    {
+        public string Error { get; set; }
+        public string CorrelationId { get; set; }
     }
 }

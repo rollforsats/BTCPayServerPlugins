@@ -21,9 +21,6 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
                 {
                     Id = table.Column<string>(type: "text", nullable: false),
                     StoreId = table.Column<string>(type: "text", nullable: false),
-                    OsmElementType = table.Column<string>(type: "text", nullable: true),
-                    OsmElementId = table.Column<long>(type: "bigint", nullable: false),
-                    OsmElementVersion = table.Column<int>(type: "integer", nullable: false),
                     BusinessName = table.Column<string>(type: "text", nullable: true),
                     Category = table.Column<string>(type: "text", nullable: true),
                     Latitude = table.Column<double>(type: "double precision", nullable: false),
@@ -34,9 +31,10 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
                     PostCode = table.Column<string>(type: "text", nullable: true),
                     Country = table.Column<string>(type: "text", nullable: true),
                     Phone = table.Column<string>(type: "text", nullable: true),
+                    Email = table.Column<string>(type: "text", nullable: true),
                     AcceptsLightning = table.Column<bool>(type: "boolean", nullable: false),
+                    AcceptsOnchain = table.Column<bool>(type: "boolean", nullable: false),
                     CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    LastVerifiedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     Status = table.Column<int>(type: "integer", nullable: false),
                     DirectorySubmittedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     DirectorySubmittedUrl = table.Column<string>(type: "text", nullable: true),
@@ -47,7 +45,11 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
                     Github = table.Column<string>(type: "text", nullable: true),
                     OnionUrl = table.Column<string>(type: "text", nullable: true),
                     DirectoryType = table.Column<string>(type: "text", nullable: true),
-                    DirectorySubType = table.Column<string>(type: "text", nullable: true)
+                    DirectorySubType = table.Column<string>(type: "text", nullable: true),
+                    BtcMapSubmissionId = table.Column<long>(type: "bigint", nullable: true),
+                    BtcMapExternalId = table.Column<string>(type: "text", nullable: true),
+                    BtcMapSubmittedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    BtcMapLastEditedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -55,10 +57,16 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
                 });
 
             migrationBuilder.CreateIndex(
-                name: "IX_Listings_Status_LastVerifiedAt",
+                name: "IX_Listings_BtcMapExternalId",
                 schema: "BTCPayServer.Plugins.BTCMap",
                 table: "Listings",
-                columns: new[] { "Status", "LastVerifiedAt" });
+                column: "BtcMapExternalId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Listings_Status",
+                schema: "BTCPayServer.Plugins.BTCMap",
+                table: "Listings",
+                column: "Status");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Listings_StoreId",
@@ -66,43 +74,11 @@ namespace BTCPayServer.Plugins.BTCMap.Migrations
                 table: "Listings",
                 column: "StoreId",
                 unique: true);
-
-            migrationBuilder.CreateTable(
-                name: "StoreOAuth",
-                schema: "BTCPayServer.Plugins.BTCMap",
-                columns: table => new
-                {
-                    Id = table.Column<string>(type: "text", nullable: false),
-                    StoreId = table.Column<string>(type: "text", nullable: false),
-                    OsmClientId = table.Column<string>(type: "text", nullable: true),
-                    OsmClientSecretEncrypted = table.Column<string>(type: "text", nullable: true),
-                    OsmAccessTokenEncrypted = table.Column<string>(type: "text", nullable: true),
-                    OsmUsername = table.Column<string>(type: "text", nullable: true),
-                    PendingState = table.Column<string>(type: "text", nullable: true),
-                    PendingStateExpiresAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
-                    OsmConnectedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
-                    OsmDisconnectedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_StoreOAuth", x => x.Id);
-                });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_StoreOAuth_StoreId",
-                schema: "BTCPayServer.Plugins.BTCMap",
-                table: "StoreOAuth",
-                column: "StoreId",
-                unique: true);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropTable(
-                name: "StoreOAuth",
-                schema: "BTCPayServer.Plugins.BTCMap");
-
             migrationBuilder.DropTable(
                 name: "Listings",
                 schema: "BTCPayServer.Plugins.BTCMap");

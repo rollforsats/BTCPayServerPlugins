@@ -14,7 +14,6 @@ public class BtcMapDbContext : DbContext
     }
 
     public DbSet<BtcMapListing> Listings { get; set; }
-    public DbSet<BtcMapStoreOAuth> StoreOAuth { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -25,13 +24,8 @@ public class BtcMapDbContext : DbContext
         {
             b.Property(e => e.StoreId).IsRequired();
             b.HasIndex(e => e.StoreId).IsUnique();
-            b.HasIndex(e => new { e.Status, e.LastVerifiedAt });
-        });
-
-        modelBuilder.Entity<BtcMapStoreOAuth>(b =>
-        {
-            b.Property(e => e.StoreId).IsRequired();
-            b.HasIndex(e => e.StoreId).IsUnique();
+            b.HasIndex(e => e.BtcMapExternalId);
+            b.HasIndex(e => e.Status);
         });
     }
 }

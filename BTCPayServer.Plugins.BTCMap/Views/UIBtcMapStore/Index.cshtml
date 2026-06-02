@@ -9,21 +9,17 @@
     ViewData.SetLayoutModel(new LayoutModel("BtcMapStore", "BTC Map")
         .SetCategory(WellKnownCategories.Store));
     var storeId = Context.GetRouteValue("storeId")?.ToString();
-    var osmBaseUrl = Model.IsMainnet
-        ? "https://www.openstreetmap.org"
-        : "https://master.apis.dev.openstreetmap.org";
 
-    // The submit handler prepends the country dial code to Settings.Phone, so
-    // the persisted value is e.g. "+1 5551234567". When we re-render the form
-    // (after unlist, or editing an existing listing) the disabled prefix field
-    // already shows "+1", so the editable input should show only the local
-    // part — strip a leading dial code that matches the selected country.
     var phoneLocal = Model.Settings?.Phone ?? string.Empty;
     var phoneDialCode = IsoDialCodes.ForCountry(Model.Settings?.Country);
     if (!string.IsNullOrEmpty(phoneDialCode) && phoneLocal.StartsWith(phoneDialCode, StringComparison.Ordinal))
     {
         phoneLocal = phoneLocal.Substring(phoneDialCode.Length).TrimStart();
     }
+
+    var hasActiveListing = Model.ExistingListing != null && Model.ExistingListing.Status == ListingStatus.Active;
+    var showActiveSummary = hasActiveListing && !Model.EditMode;
+    var showForm = !hasActiveListing || Model.EditMode;
 }
 
 <div class="row">
@@ -42,382 +38,369 @@
             List your business on <a href="https://btcmap.org" target="_blank" rel="noopener noreferrer">BTC Map</a> so customers can find you.
         </p>
 
-        <partial name="_OsmConnect" model="Model" />
-
-        @if (Model.OsmState == OsmConnectionState.Connected)
+        @if (showActiveSummary)
         {
-            @if (Model.ExistingListing != null && Model.ExistingListing.Status == ListingStatus.Active)
+            <div class="alert alert-success">
+                Your business has been submitted to BTC Map.
+            </div>
+
+            <dl class="row mb-4">
+                <dt class="col-sm-3">Business Name</dt><dd class="col-sm-9">@Model.ExistingListing.BusinessName</dd>
+                <dt class="col-sm-3">Category</dt><dd class="col-sm-9">@Model.ExistingListing.Category</dd>
+                <dt class="col-sm-3">Coordinates</dt><dd class="col-sm-9">@Model.ExistingListing.Latitude, @Model.ExistingListing.Longitude</dd>
+                @if (!string.IsNullOrEmpty(Model.Address))
+                {
+                    <dt class="col-sm-3">Address</dt><dd class="col-sm-9">@Model.Address</dd>
+                }
+                @if (!string.IsNullOrEmpty(Model.ExistingListing.Phone))
+                {
+                    <dt class="col-sm-3">Phone</dt><dd class="col-sm-9">@Model.ExistingListing.Phone</dd>
+                }
+                @if (!string.IsNullOrEmpty(Model.ExistingListing.Email))
+                {
+                    <dt class="col-sm-3">Email</dt><dd class="col-sm-9">@Model.ExistingListing.Email</dd>
+                }
+                <dt class="col-sm-3">Lightning</dt><dd class="col-sm-9">@(Model.ExistingListing.AcceptsLightning ? "Yes" : "No")</dd>
+                <dt class="col-sm-3">On-chain</dt><dd class="col-sm-9">@(Model.ExistingListing.AcceptsOnchain ? "Yes" : "No")</dd>
+                @if (Model.ExistingListing.BtcMapSubmittedAt.HasValue)
+                {
+                    <dt class="col-sm-3">Submitted on</dt><dd class="col-sm-9">@Model.ExistingListing.BtcMapSubmittedAt.Value.ToString("yyyy-MM-dd")</dd>
+                }
+            </dl>
+
+            <p class="text-muted small">
+                BTC Map moderators review submissions before publishing them to the map.
+                <a href="https://gitea.btcmap.org/teambtcmap/btcmap-general/wiki/Pending-Places" target="_blank" rel="noopener noreferrer">Learn how submissions are reviewed</a>.
+            </p>
+
+            <h4 class="mt-5 mb-3">BTCPay Directory</h4>
+            @if (!string.IsNullOrEmpty(Model.DirectoryMergedName))
             {
-                @if (Model.DaysUntilVerificationExpires.HasValue && Model.DaysUntilVerificationExpires.Value <= 30)
-                {
-                    var isExpired = Model.DaysUntilVerificationExpires.Value <= 0;
-                    var alertClass = isExpired ? "alert-danger" : "alert-warning";
-                    var btnClass = isExpired ? "btn btn-danger" : "btn btn-warning";
-                    <div class="alert @alertClass d-flex align-items-center justify-content-between">
-                        <span>
-                            @if (isExpired)
-                            {
-                                <text>Your BTC Map verification has expired. Confirm you still accept Bitcoin to stay listed.</text>
-                            }
-                            else
-                            {
-                                <text>Your BTC Map verification expires in @Model.DaysUntilVerificationExpires days. Confirm you still accept Bitcoin to stay listed.</text>
-                            }
-                        </span>
-                        <form method="post" asp-action="ConfirmVerification" asp-route-storeId="@storeId">
-                            @Html.AntiForgeryToken()
-                            <button type="submit" class="@btnClass text-nowrap ms-3">Confirm</button>
-                        </form>
-                    </div>
-                }
-
+                var capitalizedType = string.Join("-", (Model.DirectoryMergedType ?? "merchants")
+                    .Split('-')
+                    .Select(p => p.Length == 0 ? p : char.ToUpperInvariant(p[0]) + p.Substring(1)));
+                var deepLink = $"https://directory.btcpayserver.org/#type={capitalizedType}&q={System.Net.WebUtility.UrlEncode(Model.DirectoryMergedName)}";
                 <div class="alert alert-success">
-                    Your business is listed on BTC Map.
+                    Listed as <strong>@Model.DirectoryMergedName</strong>.
+                    <a href="@deepLink" class="alert-link" target="_blank" rel="noopener noreferrer">View on Directory</a>
                 </div>
-
-                <dl class="row mb-4">
-                    <dt class="col-sm-3">Business Name</dt><dd class="col-sm-9">@Model.ExistingListing.BusinessName</dd>
-                    <dt class="col-sm-3">Category</dt><dd class="col-sm-9">@Model.ExistingListing.Category</dd>
-                    <dt class="col-sm-3">Coordinates</dt><dd class="col-sm-9">@Model.ExistingListing.Latitude, @Model.ExistingListing.Longitude</dd>
-                    @if (!string.IsNullOrEmpty(Model.Address))
-                    {
-                        <dt class="col-sm-3">Address</dt><dd class="col-sm-9">@Model.Address</dd>
-                    }
-                    @if (!string.IsNullOrEmpty(Model.ExistingListing.Phone))
-                    {
-                        <dt class="col-sm-3">Phone</dt><dd class="col-sm-9">@Model.ExistingListing.Phone</dd>
-                    }
-                    <dt class="col-sm-3">OSM Element</dt><dd class="col-sm-9"><a href="@osmBaseUrl/@Model.ExistingListing.OsmElementType/@Model.ExistingListing.OsmElementId" target="_blank" rel="noopener noreferrer">@Model.ExistingListing.OsmElementType/@Model.ExistingListing.OsmElementId</a></dd>
-                    <dt class="col-sm-3">Last Verified</dt><dd class="col-sm-9">@Model.ExistingListing.LastVerifiedAt.ToString("yyyy-MM-dd")</dd>
-                    <dt class="col-sm-3">Lightning</dt><dd class="col-sm-9">@(Model.ExistingListing.AcceptsLightning ? "Yes" : "No")</dd>
-                </dl>
-
-                <h4 class="mt-5 mb-3">BTCPay Directory</h4>
-                @if (!string.IsNullOrEmpty(Model.DirectoryMergedName))
-                {
-                    var capitalizedType = string.Join("-", (Model.DirectoryMergedType ?? "merchants")
-                        .Split('-')
-                        .Select(p => p.Length == 0 ? p : char.ToUpperInvariant(p[0]) + p.Substring(1)));
-                    var deepLink = $"https://directory.btcpayserver.org/#type={capitalizedType}&q={System.Net.WebUtility.UrlEncode(Model.DirectoryMergedName)}";
-                    <div class="alert alert-success">
-                        Listed as <strong>@Model.DirectoryMergedName</strong>.
-                        <a href="@deepLink" class="alert-link" target="_blank" rel="noopener noreferrer">View on Directory</a>
-                    </div>
-                }
-                else if (!string.IsNullOrEmpty(Model.DirectoryPrUrl))
-                {
-                    <div class="alert alert-success">
-                        Submitted to the BTCPay Directory, awaiting review.
-                        <a href="@Model.DirectoryPrUrl" class="alert-link" target="_blank" rel="noopener noreferrer">View PR</a>
-                    </div>
-                }
-                else if (Model.DirectorySubmittedAt.HasValue)
-                {
-                    <div class="alert alert-info">
-                        Submission recorded; checking BTCPay Directory status&hellip;
-                    </div>
-                }
-                else
-                {
-                    <p class="text-muted small mb-2">
-                        Submit your business to <a href="https://directory.btcpayserver.org" target="_blank" rel="noopener noreferrer">directory.btcpayserver.org</a>.
-                    </p>
-                    <form method="post" asp-action="DirectorySubmit" asp-route-storeId="@storeId">
-                        @Html.AntiForgeryToken()
-                        <div class="form-group mb-3">
-                            <label class="form-label">Description <span class="text-danger">*</span></label>
-                            <textarea name="Settings.DirectoryDescription" id="active_dir_Description" class="form-control" rows="3" maxlength="180"
-                                      placeholder="Brief description of your business..." required>@Model.Settings.DirectoryDescription</textarea>
-                            <div class="form-text"><span id="active_dir_charCount">@(Model.Settings.DirectoryDescription?.Length ?? 0)</span>/180 characters</div>
-                        </div>
-                        <div class="form-group mb-3">
-                            <label class="form-label">Twitter / X</label>
-                            <input name="Settings.DirectoryTwitter" class="form-control" placeholder="@@yourhandle (optional)"
-                                   value="@Model.Settings.DirectoryTwitter" />
-                        </div>
-                        <div class="form-group mb-3">
-                            <label class="form-label">GitHub</label>
-                            <input name="Settings.DirectoryGithub" class="form-control" placeholder="https://github.com/yourorg (optional)"
-                                   value="@Model.Settings.DirectoryGithub" />
-                        </div>
-                        <div class="form-group mb-3">
-                            <label class="form-label">Onion URL</label>
-                            <input name="Settings.DirectoryOnionUrl" class="form-control" placeholder="http://yoursite.onion (optional)"
-                                   value="@Model.Settings.DirectoryOnionUrl" />
-                        </div>
-                        <div class="form-group mb-3">
-                            <label asp-for="Settings.Country" class="form-label">
-                                Country Code <span class="text-danger">*</span>
-                            </label>
-                            <select asp-for="Settings.Country" class="form-select" required
-                                    asp-items="@IsoCountries.SelectListItems">
-                                <option value="">— Select country —</option>
-                            </select>
-                        </div>
-                        <div class="row mb-3">
-                            <div class="col-md-6">
-                                <label class="form-label">Type <span class="text-danger">*</span></label>
-                                <select name="Settings.DirectoryType" class="form-select" id="active_dir_Type" required>
-                                    <option value="merchants" selected="@(Model.Settings.DirectoryType != "non-profits")">Merchants</option>
-                                    <option value="non-profits" selected="@(Model.Settings.DirectoryType == "non-profits")">Non-Profits</option>
-                                </select>
-                            </div>
-                            <div class="col-md-6" id="active_dir_subTypeGroup">
-                                <label class="form-label">Subcategory <span class="text-danger">*</span></label>
-                                <select name="Settings.DirectorySubType" class="form-select" asp-for="Settings.DirectorySubType">
-                                    <option value="">Select a subcategory...</option>
-                                    <option value="3d-printing">3D Printing</option>
-                                    <option value="adult">Adult</option>
-                                    <option value="appliances-furniture">Appliances &amp; Furniture</option>
-                                    <option value="art">Art</option>
-                                    <option value="books">Books</option>
-                                    <option value="cryptocurrency-paraphernalia">Crypto Paraphernalia</option>
-                                    <option value="domains-hosting-vpns">Domains, Hosting &amp; VPNs</option>
-                                    <option value="education">Education</option>
-                                    <option value="electronics">Electronics</option>
-                                    <option value="fashion">Fashion</option>
-                                    <option value="food">Food &amp; Drink</option>
-                                    <option value="gambling">Gambling</option>
-                                    <option value="gift-cards">Gift Cards</option>
-                                    <option value="health-household">Health &amp; Household</option>
-                                    <option value="holiday-travel">Holiday &amp; Travel</option>
-                                    <option value="jewelry">Jewelry</option>
-                                    <option value="payment-services">Payment Services</option>
-                                    <option value="pets">Pets</option>
-                                    <option value="services">Services</option>
-                                    <option value="software-video-games">Software &amp; Video Games</option>
-                                    <option value="sports">Sports</option>
-                                    <option value="tools">Tools</option>
-                                </select>
-                            </div>
-                        </div>
-                        <button type="submit" class="btn btn-primary">Submit to Directory</button>
-                    </form>
-                }
-
-                <form method="post" asp-action="Unlist" asp-route-storeId="@storeId" class="mt-5">
-                    @Html.AntiForgeryToken()
-                    <button type="submit" class="btn btn-outline-danger"
-                            onclick="return confirm('Remove your business from BTC Map?');">
-                        Remove from BTC Map
-                    </button>
-                </form>
+            }
+            else if (!string.IsNullOrEmpty(Model.DirectoryPrUrl))
+            {
+                <div class="alert alert-success">
+                    Submitted to the BTCPay Directory, awaiting review.
+                    <a href="@Model.DirectoryPrUrl" class="alert-link" target="_blank" rel="noopener noreferrer">View PR</a>
+                </div>
+            }
+            else if (Model.DirectorySubmittedAt.HasValue)
+            {
+                <div class="alert alert-info">
+                    Submission recorded; checking BTCPay Directory status&hellip;
+                </div>
             }
             else
             {
-                <form method="post" asp-action="Search" asp-route-storeId="@storeId">
+                <p class="text-muted small mb-2">
+                    Submit your business to <a href="https://directory.btcpayserver.org" target="_blank" rel="noopener noreferrer">directory.btcpayserver.org</a>.
+                </p>
+                <form method="post" asp-action="DirectorySubmit" asp-route-storeId="@storeId">
                     @Html.AntiForgeryToken()
-
-                    <h4 class="mb-3">Business Details</h4>
-
                     <div class="form-group mb-3">
-                        <label asp-for="Settings.BusinessName" class="form-label">Business Name <span class="text-danger">*</span></label>
-                        <input asp-for="Settings.BusinessName" class="form-control" required />
-                        <span asp-validation-for="Settings.BusinessName" class="text-danger"></span>
+                        <label class="form-label">Description <span class="text-danger">*</span></label>
+                        <textarea name="Settings.DirectoryDescription" id="active_dir_Description" class="form-control" rows="3" maxlength="180"
+                                  placeholder="Brief description of your business..." required>@Model.Settings.DirectoryDescription</textarea>
+                        <div class="form-text"><span id="active_dir_charCount">@(Model.Settings.DirectoryDescription?.Length ?? 0)</span>/180 characters</div>
                     </div>
-
                     <div class="form-group mb-3">
-                        <label asp-for="Settings.Url" class="form-label">Website URL <span class="text-danger">*</span></label>
-                        <input asp-for="Settings.Url" class="form-control" placeholder="https://yourbusiness.com" required />
-                        <span asp-validation-for="Settings.Url" class="text-danger"></span>
+                        <label class="form-label">Twitter / X</label>
+                        <input name="Settings.DirectoryTwitter" class="form-control" placeholder="@@yourhandle (optional)"
+                               value="@Model.Settings.DirectoryTwitter" />
                     </div>
-
                     <div class="form-group mb-3">
-                        <label asp-for="Settings.Category" class="form-label">Category <span class="text-danger">*</span></label>
-                        <select asp-for="Settings.Category" class="form-select" required>
-                            <option value="">Select a category...</option>
-                            <optgroup label="Food &amp; Drink">
-                                <option value="amenity=cafe">Cafe</option>
-                                <option value="amenity=restaurant">Restaurant</option>
-                                <option value="amenity=fast_food">Fast Food</option>
-                                <option value="amenity=bar">Bar</option>
-                                <option value="amenity=pub">Pub</option>
-                                <option value="amenity=ice_cream">Ice Cream Shop</option>
-                                <option value="amenity=food_court">Food Court</option>
-                                <option value="shop=bakery">Bakery</option>
-                                <option value="shop=pastry">Pastry / Patisserie</option>
-                                <option value="shop=confectionery">Confectionery / Sweets</option>
-                                <option value="shop=coffee">Coffee Shop (Retail)</option>
-                                <option value="shop=alcohol">Liquor Store</option>
-                                <option value="shop=wine">Wine Shop</option>
-                            </optgroup>
-                            <optgroup label="Groceries &amp; Food Retail">
-                                <option value="shop=supermarket">Supermarket</option>
-                                <option value="shop=convenience">Convenience Store</option>
-                                <option value="shop=greengrocer">Greengrocer / Produce</option>
-                                <option value="shop=butcher">Butcher</option>
-                                <option value="shop=deli">Delicatessen</option>
-                                <option value="shop=farm">Farm Shop</option>
-                                <option value="shop=health_food">Health Food</option>
-                            </optgroup>
-                            <optgroup label="Retail">
-                                <option value="shop=clothes">Clothing</option>
-                                <option value="shop=shoes">Shoes</option>
-                                <option value="shop=jewelry">Jewelry</option>
-                                <option value="shop=electronics">Electronics</option>
-                                <option value="shop=mobile_phone">Mobile Phone</option>
-                                <option value="shop=computer">Computer</option>
-                                <option value="shop=books">Bookstore</option>
-                                <option value="shop=gift">Gift Shop</option>
-                                <option value="shop=florist">Florist</option>
-                                <option value="shop=furniture">Furniture</option>
-                                <option value="shop=hardware">Hardware</option>
-                                <option value="shop=bicycle">Bicycle</option>
-                                <option value="shop=sports">Sporting Goods</option>
-                                <option value="shop=art">Art Shop / Gallery</option>
-                                <option value="shop=music">Music / Records</option>
-                                <option value="shop=toys">Toys</option>
-                                <option value="shop=pet">Pet Shop</option>
-                                <option value="shop=tobacco">Tobacco</option>
-                                <option value="shop=cannabis">Cannabis</option>
-                                <option value="shop=mall">Mall</option>
-                                <option value="shop=department_store">Department Store</option>
-                                <option value="shop=general">General Store</option>
-                                <option value="shop=yes">Other Shop</option>
-                            </optgroup>
-                            <optgroup label="Lodging">
-                                <option value="tourism=hotel">Hotel</option>
-                                <option value="tourism=guest_house">Guest House</option>
-                                <option value="tourism=apartment">Apartment / Short-term Rental</option>
-                                <option value="tourism=hostel">Hostel</option>
-                                <option value="tourism=motel">Motel</option>
-                            </optgroup>
-                            <optgroup label="Personal Services">
-                                <option value="shop=hairdresser">Hairdresser / Barber</option>
-                                <option value="shop=beauty">Beauty Salon</option>
-                                <option value="shop=massage">Massage</option>
-                                <option value="shop=tattoo">Tattoo</option>
-                                <option value="shop=optician">Optician</option>
-                                <option value="shop=laundry">Laundry</option>
-                                <option value="shop=travel_agency">Travel Agency</option>
-                            </optgroup>
-                            <optgroup label="Automotive">
-                                <option value="shop=car">Car Dealer</option>
-                                <option value="shop=car_repair">Car Repair</option>
-                                <option value="shop=car_parts">Car Parts</option>
-                                <option value="amenity=car_rental">Car Rental</option>
-                                <option value="amenity=fuel">Fuel Station</option>
-                                <option value="amenity=charging_station">EV Charging Station</option>
-                            </optgroup>
-                            <optgroup label="Financial">
-                                <option value="amenity=atm">Bitcoin ATM</option>
-                                <option value="amenity=bank">Bank</option>
-                                <option value="amenity=bureau_de_change">Bureau de Change</option>
-                                <option value="amenity=money_transfer">Money Transfer</option>
-                            </optgroup>
-                            <optgroup label="Health">
-                                <option value="amenity=pharmacy">Pharmacy</option>
-                                <option value="amenity=doctors">Doctor / Clinic</option>
-                                <option value="amenity=dentist">Dentist</option>
-                                <option value="amenity=veterinary">Veterinary</option>
-                            </optgroup>
-                            <optgroup label="Office &amp; Work">
-                                <option value="amenity=coworking_space">Coworking Space</option>
-                                <option value="office=lawyer">Lawyer</option>
-                                <option value="office=accountant">Accountant</option>
-                                <option value="office=it">IT Office</option>
-                                <option value="office=insurance">Insurance</option>
-                                <option value="office=estate_agent">Real Estate</option>
-                                <option value="office=yes">Other Office</option>
-                            </optgroup>
-                            <optgroup label="Leisure &amp; Recreation">
-                                <option value="leisure=fitness_centre">Gym / Fitness</option>
-                                <option value="leisure=sports_centre">Sports Centre</option>
-                                <option value="leisure=hackerspace">Hackerspace</option>
-                                <option value="leisure=escape_game">Escape Room</option>
-                                <option value="tourism=attraction">Tourist Attraction</option>
-                                <option value="tourism=museum">Museum</option>
-                                <option value="tourism=gallery">Art Gallery</option>
-                                <option value="amenity=cinema">Cinema</option>
-                                <option value="amenity=theatre">Theatre</option>
-                                <option value="amenity=nightclub">Nightclub</option>
-                            </optgroup>
-                            <optgroup label="Craft &amp; Trades">
-                                <option value="craft=brewery">Brewery</option>
-                                <option value="craft=winery">Winery</option>
-                                <option value="craft=photographer">Photographer</option>
-                                <option value="craft=electrician">Electrician</option>
-                                <option value="craft=plumber">Plumber</option>
-                                <option value="craft=jeweller">Jeweller</option>
-                                <option value="craft=watchmaker">Watchmaker</option>
-                                <option value="craft=shoemaker">Shoemaker / Cobbler</option>
-                            </optgroup>
-                            <optgroup label="Other">
-                                <option value="amenity=marketplace">Marketplace</option>
-                                <option value="amenity=vending_machine">Vending Machine</option>
-                                <option value="amenity=post_office">Post Office</option>
-                                <option value="amenity=internet_cafe">Internet Cafe</option>
-                                <option value="amenity=language_school">Language School</option>
-                            </optgroup>
+                        <label class="form-label">GitHub</label>
+                        <input name="Settings.DirectoryGithub" class="form-control" placeholder="https://github.com/yourorg (optional)"
+                               value="@Model.Settings.DirectoryGithub" />
+                    </div>
+                    <div class="form-group mb-3">
+                        <label class="form-label">Onion URL</label>
+                        <input name="Settings.DirectoryOnionUrl" class="form-control" placeholder="http://yoursite.onion (optional)"
+                               value="@Model.Settings.DirectoryOnionUrl" />
+                    </div>
+                    <div class="form-group mb-3">
+                        <label asp-for="Settings.Country" class="form-label">
+                            Country Code <span class="text-danger">*</span>
+                        </label>
+                        <select asp-for="Settings.Country" class="form-select" required
+                                asp-items="@IsoCountries.SelectListItems">
+                            <option value="">— Select country —</option>
                         </select>
-                        <span asp-validation-for="Settings.Category" class="text-danger"></span>
-                    </div>
-
-                    <p class="text-muted small mb-2">
-                        Address fields below are optional &mdash; they help find your business on OpenStreetMap.
-                        House number and street are kept separate to match OSM's addressing convention.
-                        <strong>Latitude and longitude are required.</strong> If you have an address but no coordinates,
-                        fill in the address fields and click <strong>Lookup Coordinates</strong>.
-                    </p>
-                    <div class="row mb-3">
-                        <div class="col-md-3">
-                            <label asp-for="Settings.HouseNumber" class="form-label">House Number</label>
-                            <input asp-for="Settings.HouseNumber" class="form-control" placeholder="e.g., 123, 12A" />
-                        </div>
-                        <div class="col-md-5">
-                            <label asp-for="Settings.Street" class="form-label">Street</label>
-                            <input asp-for="Settings.Street" class="form-control" placeholder="e.g., Main Street" />
-                        </div>
-                        <div class="col-md-4">
-                            <label asp-for="Settings.City" class="form-label">City</label>
-                            <input asp-for="Settings.City" class="form-control" />
-                        </div>
                     </div>
                     <div class="row mb-3">
-                        <div class="col-md-4">
-                            <label asp-for="Settings.PostCode" class="form-label">Post Code</label>
-                            <input asp-for="Settings.PostCode" class="form-control" />
-                        </div>
-                        <div class="col-md-4">
-                            <label asp-for="Settings.Country" class="form-label">
-                                Country Code <span id="Settings_Country_required" class="text-danger" style="display: none;">*</span>
-                            </label>
-                            <select asp-for="Settings.Country" class="form-select"
-                                    asp-items="@IsoCountries.SelectListItems">
-                                <option value="">— Select country —</option>
+                        <div class="col-md-6">
+                            <label class="form-label">Type <span class="text-danger">*</span></label>
+                            <select name="Settings.DirectoryType" class="form-select" id="active_dir_Type" required>
+                                <option value="merchants" selected="@(Model.Settings.DirectoryType != "non-profits")">Merchants</option>
+                                <option value="non-profits" selected="@(Model.Settings.DirectoryType == "non-profits")">Non-Profits</option>
                             </select>
                         </div>
-                        <div class="col-md-4 d-flex align-items-end">
-                            <button type="button" class="btn btn-outline-secondary w-100" id="geocodeBtn">
-                                Lookup Coordinates
-                            </button>
+                        <div class="col-md-6" id="active_dir_subTypeGroup">
+                            <label class="form-label">Subcategory <span class="text-danger">*</span></label>
+                            <select name="Settings.DirectorySubType" class="form-select" asp-for="Settings.DirectorySubType">
+                                <option value="">Select a subcategory...</option>
+                                <option value="3d-printing">3D Printing</option>
+                                <option value="adult">Adult</option>
+                                <option value="appliances-furniture">Appliances &amp; Furniture</option>
+                                <option value="art">Art</option>
+                                <option value="books">Books</option>
+                                <option value="cryptocurrency-paraphernalia">Crypto Paraphernalia</option>
+                                <option value="domains-hosting-vpns">Domains, Hosting &amp; VPNs</option>
+                                <option value="education">Education</option>
+                                <option value="electronics">Electronics</option>
+                                <option value="fashion">Fashion</option>
+                                <option value="food">Food &amp; Drink</option>
+                                <option value="gambling">Gambling</option>
+                                <option value="gift-cards">Gift Cards</option>
+                                <option value="health-household">Health &amp; Household</option>
+                                <option value="holiday-travel">Holiday &amp; Travel</option>
+                                <option value="jewelry">Jewelry</option>
+                                <option value="payment-services">Payment Services</option>
+                                <option value="pets">Pets</option>
+                                <option value="services">Services</option>
+                                <option value="software-video-games">Software &amp; Video Games</option>
+                                <option value="sports">Sports</option>
+                                <option value="tools">Tools</option>
+                            </select>
                         </div>
                     </div>
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <label asp-for="Settings.Latitude" class="form-label">Latitude <span class="text-danger">*</span></label>
-                            <input asp-for="Settings.Latitude" class="form-control" step="any" required />
-                            <span asp-validation-for="Settings.Latitude" class="text-danger"></span>
-                        </div>
-                        <div class="col-md-6">
-                            <label asp-for="Settings.Longitude" class="form-label">Longitude <span class="text-danger">*</span></label>
-                            <input asp-for="Settings.Longitude" class="form-control" step="any" required />
-                            <span asp-validation-for="Settings.Longitude" class="text-danger"></span>
-                        </div>
-                    </div>
+                    <button type="submit" class="btn btn-primary">Submit to Directory</button>
+                </form>
+            }
+        }
 
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <label asp-for="Settings.Phone" class="form-label">Phone (optional)</label>
-                            <div class="input-group">
-                                <input type="text" id="Settings_PhoneDialCodeDisplay" class="form-control"
-                                       style="max-width: 5rem;" disabled aria-label="Dial code" />
-                                <input asp-for="Settings.Phone" value="@phoneLocal" class="form-control" placeholder="555-123-4567" />
-                            </div>
-                            <span asp-validation-for="Settings.Phone" class="text-danger"></span>
-                        </div>
-                    </div>
+        @if (showForm)
+        {
+            var formAction = Model.EditMode ? "UpdateListing" : "Search";
+            var submitButtonText = Model.EditMode ? "Save changes" : "Search & List on BTC Map";
+            <form method="post" asp-action="@formAction" asp-route-storeId="@storeId">
+                @Html.AntiForgeryToken()
 
+                <h4 class="mb-3">Business Details</h4>
+
+                <div class="form-group mb-3">
+                    <label asp-for="Settings.BusinessName" class="form-label">Business Name <span class="text-danger">*</span></label>
+                    <input asp-for="Settings.BusinessName" class="form-control" required />
+                    <span asp-validation-for="Settings.BusinessName" class="text-danger"></span>
+                </div>
+
+                <div class="form-group mb-3">
+                    <label asp-for="Settings.Url" class="form-label">Website URL <span class="text-danger">*</span></label>
+                    <input asp-for="Settings.Url" class="form-control" placeholder="https://yourbusiness.com" required />
+                    <span asp-validation-for="Settings.Url" class="text-danger"></span>
+                </div>
+
+                <div class="form-group mb-3">
+                    <label asp-for="Settings.Category" class="form-label">Category <span class="text-danger">*</span></label>
+                    <select asp-for="Settings.Category" class="form-select" required>
+                        <option value="">Select a category...</option>
+                        <optgroup label="Food &amp; Drink">
+                            <option value="amenity=cafe">Cafe</option>
+                            <option value="amenity=restaurant">Restaurant</option>
+                            <option value="amenity=fast_food">Fast Food</option>
+                            <option value="amenity=bar">Bar</option>
+                            <option value="amenity=pub">Pub</option>
+                            <option value="amenity=ice_cream">Ice Cream Shop</option>
+                            <option value="amenity=food_court">Food Court</option>
+                            <option value="shop=bakery">Bakery</option>
+                            <option value="shop=pastry">Pastry / Patisserie</option>
+                            <option value="shop=confectionery">Confectionery / Sweets</option>
+                            <option value="shop=coffee">Coffee Shop (Retail)</option>
+                            <option value="shop=alcohol">Liquor Store</option>
+                            <option value="shop=wine">Wine Shop</option>
+                        </optgroup>
+                        <optgroup label="Groceries &amp; Food Retail">
+                            <option value="shop=supermarket">Supermarket</option>
+                            <option value="shop=convenience">Convenience Store</option>
+                            <option value="shop=greengrocer">Greengrocer / Produce</option>
+                            <option value="shop=butcher">Butcher</option>
+                            <option value="shop=deli">Delicatessen</option>
+                            <option value="shop=farm">Farm Shop</option>
+                            <option value="shop=health_food">Health Food</option>
+                        </optgroup>
+                        <optgroup label="Retail">
+                            <option value="shop=clothes">Clothing</option>
+                            <option value="shop=shoes">Shoes</option>
+                            <option value="shop=jewelry">Jewelry</option>
+                            <option value="shop=electronics">Electronics</option>
+                            <option value="shop=mobile_phone">Mobile Phone</option>
+                            <option value="shop=computer">Computer</option>
+                            <option value="shop=books">Bookstore</option>
+                            <option value="shop=gift">Gift Shop</option>
+                            <option value="shop=florist">Florist</option>
+                            <option value="shop=furniture">Furniture</option>
+                            <option value="shop=hardware">Hardware</option>
+                            <option value="shop=bicycle">Bicycle</option>
+                            <option value="shop=sports">Sporting Goods</option>
+                            <option value="shop=art">Art Shop / Gallery</option>
+                            <option value="shop=music">Music / Records</option>
+                            <option value="shop=toys">Toys</option>
+                            <option value="shop=pet">Pet Shop</option>
+                            <option value="shop=tobacco">Tobacco</option>
+                            <option value="shop=cannabis">Cannabis</option>
+                            <option value="shop=mall">Mall</option>
+                            <option value="shop=department_store">Department Store</option>
+                            <option value="shop=general">General Store</option>
+                            <option value="shop=yes">Other Shop</option>
+                        </optgroup>
+                        <optgroup label="Lodging">
+                            <option value="tourism=hotel">Hotel</option>
+                            <option value="tourism=guest_house">Guest House</option>
+                            <option value="tourism=apartment">Apartment / Short-term Rental</option>
+                            <option value="tourism=hostel">Hostel</option>
+                            <option value="tourism=motel">Motel</option>
+                        </optgroup>
+                        <optgroup label="Personal Services">
+                            <option value="shop=hairdresser">Hairdresser / Barber</option>
+                            <option value="shop=beauty">Beauty Salon</option>
+                            <option value="shop=massage">Massage</option>
+                            <option value="shop=tattoo">Tattoo</option>
+                            <option value="shop=optician">Optician</option>
+                            <option value="shop=laundry">Laundry</option>
+                            <option value="shop=travel_agency">Travel Agency</option>
+                        </optgroup>
+                        <optgroup label="Automotive">
+                            <option value="shop=car">Car Dealer</option>
+                            <option value="shop=car_repair">Car Repair</option>
+                            <option value="shop=car_parts">Car Parts</option>
+                            <option value="amenity=car_rental">Car Rental</option>
+                            <option value="amenity=fuel">Fuel Station</option>
+                            <option value="amenity=charging_station">EV Charging Station</option>
+                        </optgroup>
+                        <optgroup label="Financial">
+                            <option value="amenity=atm">Bitcoin ATM</option>
+                            <option value="amenity=bank">Bank</option>
+                            <option value="amenity=bureau_de_change">Bureau de Change</option>
+                            <option value="amenity=money_transfer">Money Transfer</option>
+                        </optgroup>
+                        <optgroup label="Health">
+                            <option value="amenity=pharmacy">Pharmacy</option>
+                            <option value="amenity=doctors">Doctor / Clinic</option>
+                            <option value="amenity=dentist">Dentist</option>
+                            <option value="amenity=veterinary">Veterinary</option>
+                        </optgroup>
+                        <optgroup label="Office &amp; Work">
+                            <option value="amenity=coworking_space">Coworking Space</option>
+                            <option value="office=lawyer">Lawyer</option>
+                            <option value="office=accountant">Accountant</option>
+                            <option value="office=it">IT Office</option>
+                            <option value="office=insurance">Insurance</option>
+                            <option value="office=estate_agent">Real Estate</option>
+                            <option value="office=yes">Other Office</option>
+                        </optgroup>
+                        <optgroup label="Leisure &amp; Recreation">
+                            <option value="leisure=fitness_centre">Gym / Fitness</option>
+                            <option value="leisure=sports_centre">Sports Centre</option>
+                            <option value="leisure=hackerspace">Hackerspace</option>
+                            <option value="leisure=escape_game">Escape Room</option>
+                            <option value="tourism=attraction">Tourist Attraction</option>
+                            <option value="tourism=museum">Museum</option>
+                            <option value="tourism=gallery">Art Gallery</option>
+                            <option value="amenity=cinema">Cinema</option>
+                            <option value="amenity=theatre">Theatre</option>
+                            <option value="amenity=nightclub">Nightclub</option>
+                        </optgroup>
+                        <optgroup label="Craft &amp; Trades">
+                            <option value="craft=brewery">Brewery</option>
+                            <option value="craft=winery">Winery</option>
+                            <option value="craft=photographer">Photographer</option>
+                            <option value="craft=electrician">Electrician</option>
+                            <option value="craft=plumber">Plumber</option>
+                            <option value="craft=jeweller">Jeweller</option>
+                            <option value="craft=watchmaker">Watchmaker</option>
+                            <option value="craft=shoemaker">Shoemaker / Cobbler</option>
+                        </optgroup>
+                        <optgroup label="Other">
+                            <option value="amenity=marketplace">Marketplace</option>
+                            <option value="amenity=vending_machine">Vending Machine</option>
+                            <option value="amenity=post_office">Post Office</option>
+                            <option value="amenity=internet_cafe">Internet Cafe</option>
+                            <option value="amenity=language_school">Language School</option>
+                        </optgroup>
+                    </select>
+                    <span asp-validation-for="Settings.Category" class="text-danger"></span>
+                </div>
+
+                <p class="text-muted small mb-2">
+                    Address fields below are optional &mdash; they help find your business on BTC Map.
+                    House number and street are kept separate to match BTC Map's addressing convention.
+                    <strong>Latitude and longitude are required.</strong> If you have an address but no coordinates,
+                    fill in the address fields and click <strong>Lookup Coordinates</strong>.
+                </p>
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <label asp-for="Settings.HouseNumber" class="form-label">House Number</label>
+                        <input asp-for="Settings.HouseNumber" class="form-control" placeholder="e.g., 123, 12A" />
+                    </div>
+                    <div class="col-md-5">
+                        <label asp-for="Settings.Street" class="form-label">Street</label>
+                        <input asp-for="Settings.Street" class="form-control" placeholder="e.g., Main Street" />
+                    </div>
+                    <div class="col-md-4">
+                        <label asp-for="Settings.City" class="form-label">City</label>
+                        <input asp-for="Settings.City" class="form-control" />
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label asp-for="Settings.PostCode" class="form-label">Post Code</label>
+                        <input asp-for="Settings.PostCode" class="form-control" />
+                    </div>
+                    <div class="col-md-4">
+                        <label asp-for="Settings.Country" class="form-label">
+                            Country Code <span id="Settings_Country_required" class="text-danger" style="display: none;">*</span>
+                        </label>
+                        <select asp-for="Settings.Country" class="form-select"
+                                asp-items="@IsoCountries.SelectListItems">
+                            <option value="">— Select country —</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <button type="button" class="btn btn-outline-secondary w-100" id="geocodeBtn">
+                            Lookup Coordinates
+                        </button>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label asp-for="Settings.Latitude" class="form-label">Latitude <span class="text-danger">*</span></label>
+                        <input asp-for="Settings.Latitude" class="form-control" step="any" required />
+                        <span asp-validation-for="Settings.Latitude" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="Settings.Longitude" class="form-label">Longitude <span class="text-danger">*</span></label>
+                        <input asp-for="Settings.Longitude" class="form-control" step="any" required />
+                        <span asp-validation-for="Settings.Longitude" class="text-danger"></span>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label asp-for="Settings.Phone" class="form-label">Phone (optional)</label>
+                        <div class="input-group">
+                            <input type="text" id="Settings_PhoneDialCodeDisplay" class="form-control"
+                                   style="max-width: 5rem;" disabled aria-label="Dial code" />
+                            <input asp-for="Settings.Phone" value="@phoneLocal" class="form-control" placeholder="555-123-4567" />
+                        </div>
+                        <span asp-validation-for="Settings.Phone" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="Settings.Email" class="form-label">Email (optional)</label>
+                        <input asp-for="Settings.Email" class="form-control" placeholder="contact@yourbusiness.com" />
+                        <span asp-validation-for="Settings.Email" class="text-danger"></span>
+                    </div>
+                </div>
+
+                @if (!Model.EditMode)
+                {
                     <h4 class="mt-5 mb-3">BTCPay Directory</h4>
                     <div class="form-check mb-3">
                         <input asp-for="Settings.SubmitToDirectory" type="checkbox" class="form-check-input" id="submitToDirectory" />
@@ -483,10 +466,16 @@
                             </div>
                         </div>
                     </div>
+                }
 
-                    <button type="submit" class="btn btn-primary">Search &amp; List on BTC Map</button>
-                </form>
-            }
+                <div class="mt-4">
+                    <button type="submit" class="btn btn-primary">@submitButtonText</button>
+                    @if (Model.EditMode)
+                    {
+                        <a asp-action="Index" asp-route-storeId="@storeId" class="btn btn-link">Cancel</a>
+                    }
+                </div>
+            </form>
         }
     </div>
 </div>
@@ -495,7 +484,6 @@
     window.btcMapDialCodes = @Html.Raw(JsonSerializer.Serialize(IsoDialCodes.ByIso2));
 </script>
 <script>
-    // Geocode button
     document.getElementById('geocodeBtn')?.addEventListener('click', async function() {
         const form = this.closest('form');
         const data = new FormData(form);
@@ -523,7 +511,6 @@
         }
     });
 
-    // Directory checkbox toggles field visibility and required state
     const dirCheckbox = document.getElementById('submitToDirectory');
     const dirFields = document.getElementById('directoryFields');
     function toggleDirectoryFields() {
@@ -548,8 +535,6 @@
     dirCheckbox?.addEventListener('change', toggleDirectoryFields);
     toggleDirectoryFields();
 
-    // Active-listing form: no SubmitToDirectory gate (the form *is* the submission).
-    // SubType is required iff DirectoryType is "merchants".
     function syncActiveSubTypeRequired() {
         const subTypeEl = document.getElementById('Settings_DirectorySubType');
         const activeType = document.getElementById('active_dir_Type');
@@ -563,14 +548,12 @@
     }
     syncActiveSubTypeRequired();
 
-    // Directory type/subtype toggle
     document.getElementById('dir_Type')?.addEventListener('change', function() {
         const group = document.getElementById('dir_subTypeGroup');
         if (group) group.style.display = this.value === 'merchants' ? '' : 'none';
         toggleDirectoryFields();
     });
 
-    // Character counter
     document.getElementById('Settings_DirectoryDescription')?.addEventListener('input', function() {
         document.getElementById('dir_charCount').textContent = this.value.length;
     });
@@ -578,29 +561,16 @@
         document.getElementById('active_dir_charCount').textContent = this.value.length;
     });
 
-    // Active listing directory type/subtype toggle
     document.getElementById('active_dir_Type')?.addEventListener('change', function() {
         const group = document.getElementById('active_dir_subTypeGroup');
         if (group) group.style.display = this.value === 'merchants' ? '' : 'none';
         syncActiveSubTypeRequired();
     });
 
-    // Phone auto-prepend + light normalization on submit.
-    // Per OSM Key:phone wiki: canonical format is `+<CC> <area> <local>`
-    // (ITU-T E.123 / DIN 5008). RFC 3966 hyphen form is also accepted.
-    // "Phone numbers should not have parentheses around any of these
-    // number elements, including the area code."
-    // Normalize: strip parens, collapse whitespace runs, then either
-    // pass through (if input starts with '+') or prepend the dial code
-    // derived from the selected address Country.
     (function() {
         const phoneEl = document.getElementById('Settings_Phone');
         if (!phoneEl) return;
         const form = phoneEl.closest('form');
-        // Scope country lookup to phone's form: the page renders two
-        // Settings.Country selects in mutually exclusive Razor branches
-        // today, but the duplicate ID would silently mis-target if that
-        // ever changed.
         const countryEl = form?.querySelector('#Settings_Country');
         form?.addEventListener('submit', function() {
             let raw = (phoneEl.value ?? '').trim();
@@ -620,10 +590,6 @@
         });
     })();
 
-    // Phone dial-code display: mirror the dial code for the selected
-    // address Country into the disabled prefix field beside the phone
-    // input. Purely visual — the dial code is composed into
-    // Settings.Phone by the submit handler above, not via this field.
     (function() {
         const displayEl = document.getElementById('Settings_PhoneDialCodeDisplay');
         if (!displayEl) return;

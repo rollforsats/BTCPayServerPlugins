@@ -1,12 +1,14 @@
 # BTC Map Plugin — Testing Guide
 
-This plugin integrates with the OpenStreetMap Overpass API, which is frequently slow, rate-limited, or unavailable. It also uses OAuth against the OSM dev server (`master.apis.dev.openstreetmap.org`), which is not indexed by Overpass, so round-trip testing through real APIs is unreliable.
+This plugin uses the OpenStreetMap Overpass API to search for nearby places during the create flow. Overpass is frequently slow, rate-limited, or unavailable, so round-trip testing against the real API is unreliable.
 
-**Fixture mode** swaps the real `OverpassApiClient` for `FixtureOverpassApiClient` which returns hardcoded scenario data. It activates only when all three conditions are met:
+Submissions themselves no longer write to OSM. They go through plugin-builder's `/apis/btcmaps/v1/submit` endpoint, which mediates btcmap-api's `submit_place` JSON-RPC and (optionally) opens a directory PR. See `BTCMAP_PLUGINBUILDER_SCENARIO` below for fixture-mode coverage of the submit lane.
+
+**Overpass fixture mode** swaps the real `OverpassApiClient` for `FixtureOverpassApiClient` which returns hardcoded scenario data for the search step. It activates only when all three conditions are met:
 
 1. `BTCMAP_OVERPASS_SCENARIO=<name>` environment variable is set
 2. `ASPNETCORE_ENVIRONMENT=Development` (set by the `Bitcoin-HTTPS` launch profile)
-3. `OsmAuthService.IsMainnet` is false (regtest, testnet, or signet)
+3. `BTCPayNetworkProvider.NetworkType` is not Mainnet (regtest, testnet, or signet)
 
 If the env var is set but the other two checks fail, the plugin **refuses to start** with a loud `InvalidOperationException`. Test data cannot leak into production.
 
@@ -21,7 +23,7 @@ Fixture-mode code lives under `Services/`:
 
 1. **Running dev environment.** This repo ships a `dev.sh` at the root that builds all plugins and launches BTCPay via the `Bitcoin-HTTPS` launch profile (defined in `btcpayserver/BTCPayServer/Properties/launchSettings.json`). BTCPay listens on `https://localhost:14142/` with a self-signed dev cert.
 2. **Postgres running** in the `btcpayservertests-postgres-1` Docker container on port 39372.
-3. **OSM OAuth connected.** Admin → Plugins → BTC Map → connect to OSM dev server. Only needed if you want to test Create/Link paths end-to-end; pure UI verification works without it.
+3. **Plugin-builder token configured** (only if exercising the submit lane end-to-end). The token is set per-store in the plugin settings UI and routes through BTCPay's `PoliciesSettings.PluginSource` to the configured plugin-builder. Pure UI verification of the search/picker step works without it; use `BTCMAP_PLUGINBUILDER_SCENARIO` to fake submit responses without a real token.
 4. **Plugin not disabled.** If BTCPay previously crashed on this plugin, it will have written `disable:BTCPayServer.Plugins.BTCMap` to `~/.btcpayserver/Plugins/commands`. Delete that file before starting.
 
 ## How to run a scenario
@@ -84,10 +86,10 @@ BTCMAP_OVERPASS_SCENARIO=empty-everywhere ./dev.sh
 
 **Expected UI:**
 - Page shows "No existing locations found near your coordinates."
-- "Create a New Location" section visible with a green **Create New OSM Node** button.
+- "Create a New Location" section visible with a green **Create New Listing** button.
 - View the page source — the hidden `Settings.Latitude` and `Settings.Longitude` inputs must render with `.` decimal separators (`32.6838298`, `-117.1839771`) regardless of OS locale. If they render with `,` (e.g. `32,6838298`), bug 1 is not fixed.
 
-**Happy path:** click Create New OSM Node. A pending `BtcMapListing` row is inserted, then `OsmApiClient.CreateNode()` is called against the real OSM dev server. If OAuth is connected this creates a real node and the listing transitions to `Active`. If OAuth isn't connected the listing is rolled back and you see an error banner — that's the controller's error-handling path.
+**Happy path:** click Create New Listing. The controller calls `_btcMapService.SubmitListing`, which posts to plugin-builder's `/apis/btcmaps/v1/submit`. With `BTCMAP_PLUGINBUILDER_SCENARIO` unset, the call hits the real plugin-builder; pair this with a `BTCMAP_PLUGINBUILDER_SCENARIO=btcmap-only-success` (or `both-lanes-success` when the directory checkbox is also ticked) to exercise the rest of the flow without a real token. On success a `BtcMapListing` row is persisted with `Status = Active` + `BtcMapSubmissionId` populated; on `PluginBuilderApiException` the row is rolled back via the snapshot pattern and you see an error banner.
 
 ---
 
@@ -113,15 +115,15 @@ BTCMAP_OVERPASS_SCENARIO=fresh-cafe ./dev.sh
 - Category line: `Amenity: cafe · node/1000001`
 - Address line: `1100 Orange Ave, Coronado, 92118, US`
 - Coordinates + distance: `32.68396, -117.18383 · ~20 m away`
-- Button: solid blue **Select this**
+- Button: solid blue **Use this location**
 
-**Happy path:** click **Select this**. A `BtcMapListing` row is created pointing at `osmType=node`, `osmId=1000001`. The subsequent `OsmApiClient` call will fail with 404 because node 1000001 doesn't exist on the real OSM dev server — **this is expected**. The test covers UI + DB insert, not the actual OSM write. For full round-trip, edit `OverpassFixtureScenarios.cs` and substitute a real osmId from a node you previously created on the dev server.
+**Happy path:** click **Use this location**. The picker prefills the create form with the selected element's name/category/address/coordinates and routes the merchant into the same `CreateNew` action. Submission then goes through plugin-builder (pair with a `BTCMAP_PLUGINBUILDER_SCENARIO` if you don't want a real token round-trip). The synthetic node id `1000001` is used only for picker prefill display — the plugin no longer writes to OSM, so there is no OSM round-trip step on this path.
 
 ---
 
 ### 3. `already-tagged`
 
-**What it tests:** bug 3 dedupe (same element returned from two sources collapses to one row), UX-5 link-tagged-node button (outline-primary + tooltip), `hasBtc` badge, existing-tags line.
+**What it tests:** bug 3 dedupe (same element returned from two sources collapses to one row), `hasBtc` badge, existing-tags line. Awareness signal: merchant sees the element is already on BTC Map before re-submitting.
 
 **How to run:**
 ```bash
@@ -143,11 +145,11 @@ BTCMAP_OVERPASS_SCENARIO=already-tagged ./dev.sh
 - Coordinates + distance: `32.68786, -117.17920 · ~530 m away`
 - Yellow badge: **Already on BTC Map**
 - Below the badge, muted small text: `currency:XBT=yes  payment:onchain=yes  payment:lightning=yes`
-- Button: **outline** blue **Link existing listing** (with tooltip on hover: "This location is already on BTC Map. Linking associates it with your BTCPay store.")
+- Button: solid blue **Use this location** (same button as untagged elements; the badge is informational only)
 
 **Dedupe failure signal:** if you see two "Bitcoin Sushi" items, the `HashSet<(string, long)>` dedupe in `UIBtcMapStoreController.Search` is broken.
 
-**Happy path:** click **Link existing listing**. A `BtcMapListing` row is created even though the node was already tagged. This validates UX-5's core requirement: merchants can claim already-tagged nodes for reverification tracking. The local DB row's `BusinessName` will be stamped with `Bitcoin Sushi` (OSM is source-of-truth post-link), not whatever the merchant typed in the form.
+**Happy path:** click **Use this location**. The picker prefills the create form with the element's name/category/address/coordinates and routes through `CreateNew` → plugin-builder. The plugin does not distinguish "already on BTC Map" from "fresh" at submit time — both produce a `submit_place` upsert (btcmap-api's `(origin, external_id)` upsert handles dedup server-side when the same store later resubmits). The "Already on BTC Map" badge is purely a heads-up that the merchant's location may already exist on the public map; submitting still creates the BTCPay-origin record on the moderator queue.
 
 ---
 
@@ -177,11 +179,11 @@ BTCMAP_OVERPASS_SCENARIO=cascading ./dev.sh
    - `Amenity: bar · node/3000001`
    - Yellow "Already on BTC Map" badge
    - Existing tags line: `currency:XBT=yes  payment:lightning=yes`
-   - Outline "Link existing listing" button
+   - Solid "Use this location" button
 2. **Bitcoin Brewery** (untagged restaurant, from address search)
    - `Amenity: restaurant · node/3000002`
    - Address: `1134 Orange Ave, Coronado, 92118, US`
-   - Solid "Select this" button
+   - Solid "Use this location" button
 
 **Failure signals:**
 - Bitcoin Beach Bar not at the top → merge-tagged-first logic broken
@@ -215,7 +217,7 @@ BTCMAP_OVERPASS_SCENARIO=multiple-nearby-untagged ./dev.sh
 | Latitude | `32.6838298` |
 | Longitude | `-117.1839771` |
 
-**Expected UI:** four list items, each untagged (no yellow badge), each with a solid "Select this" button:
+**Expected UI:** four list items, each untagged (no yellow badge), each with a solid "Use this location" button:
 
 1. **Bitcoin Pizza** — `Shop: bakery · node/4000001`, address `1100 Orange Ave, Coronado, 92118`, ~20 m away
 2. **Bitcoin Coffee** — `Amenity: restaurant · node/4000002`, address `1134 Orange Ave, Coronado, 92118`, ~30 m away
@@ -226,9 +228,9 @@ BTCMAP_OVERPASS_SCENARIO=multiple-nearby-untagged ./dev.sh
 - All four items render without layout issues
 - Category labels show both `shop` and `amenity` keys correctly formatted (`Shop: bakery`, `Amenity: restaurant`, etc.)
 - Distances span a realistic range from ~20 m to ~170 m
-- No duplicate button behavior — each "Select this" submits the correct `osmId`
+- No duplicate button behavior — each "Use this location" submits the correct prefilled coordinates / category / address
 
-**Happy path:** click **Select this** on any item; confirm the correct `osmId` is recorded in the `BtcMapListing` row. Repeat with a different item to verify the forms don't bleed state between each other.
+**Happy path:** click **Use this location** on any item; confirm the create form is prefilled with that item's coordinates and address. Repeat with a different item to verify the forms don't bleed state between each other.
 
 ---
 
@@ -258,9 +260,9 @@ BTCMAP_OVERPASS_SCENARIO=name-mismatch-fallback-to-address ./dev.sh
 - Category line: `Amenity: cafe · node/5000001`
 - Address line: `1134 Orange Ave, Coronado, 92118, US`
 - Coordinates + distance visible
-- Solid blue "Select this" button
+- Solid blue "Use this location" button
 
-**Why this matters:** the merchant sees a name that doesn't match what they typed, and they have to trust the address match to click the button. After clicking, the local DB row's `BusinessName` is stamped with `Bitcoin Diner` (OSM source-of-truth), not `Bitcoin Cafe` from the form.
+**Why this matters:** the merchant sees a name that doesn't match what they typed, and they have to trust the address match to click the button. After clicking, the create form is prefilled with the OSM element's coordinates and address; the merchant's typed business name (`Bitcoin Cafe`) is preserved on the form so the submission carries the merchant-supplied name, not the stale OSM record.
 
 **Log lines to watch for:**
 ```
@@ -338,8 +340,8 @@ Either the env var didn't reach the `dotnet watch` child process (make sure it's
 **Fixture mode active but Search throws an unexpected error**
 Likely a scenario data problem, not a DI problem. Check the `dev.sh` console for the inner exception from `FixtureOverpassApiClient` — it logs the stack trace at the point where deserialization or iteration failed.
 
-**Clicking Link or Create fails with 404**
-Expected if you're using synthetic osmIds that don't exist on the real OSM dev server. The fixture mode tests the UI + DB insert; for full OSM round-trip, substitute a real osmId from a node you previously created on the dev server into the relevant method in `OverpassFixtureScenarios.cs`.
+**Clicking Use this location or Create New Listing returns a plugin-builder error**
+The picker step is offline-safe (Overpass fixtures only), but the submit step calls plugin-builder. If you don't want a real token round-trip, set `BTCMAP_PLUGINBUILDER_SCENARIO` to one of the available scenarios (e.g. `btcmap-only-success`, `both-lanes-success`, `btcmap-upstream-failed`, `rate-limited`) — see `PluginBuilderApiFixtureScenarios.cs` for the full list. Without that env var, errors like `btcmap-not-configured` or `directory-not-configured` indicate the token is missing on the real plugin-builder instance.
 
 ---
 
