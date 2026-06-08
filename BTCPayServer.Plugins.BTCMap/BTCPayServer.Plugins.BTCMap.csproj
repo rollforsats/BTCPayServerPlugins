@@ -4,8 +4,8 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <Product>BTCPay Server BTC Map Plugin</Product>
-    <Description>List your BTCPay Server merchant on BTC Map automatically via OpenStreetMap.</Description>
+    <Product>BTC Map</Product>
+    <Description>Put your business on the map. This plugin submits your store to BTC Map directly from BTCPay, so in-person customers can find you.</Description>
     <Version>1.0.0</Version>
   </PropertyGroup>
 
